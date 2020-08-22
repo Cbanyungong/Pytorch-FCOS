@@ -3,102 +3,110 @@
 # ================================================================
 #
 #   Author      : miemie2013
-#   Created date: 2020-06-23 15:12:37
-#   Description : paddlepaddle_solo
+#   Created date: 2020-08-21 19:33:37
+#   Description : pytorch_fcos
 #
 # ================================================================
-import paddle.fluid as fluid
-import paddle.fluid.layers as P
+import torch
 
 from model.custom_layers import Conv2dUnit
 
-class ConvBlock(object):
-    def __init__(self, filters, use_dcn=False, stride=2, block_name=''):
-        '''
-        官方SOLO仓库中，下采样是在中间的3x3卷积层进行。
-        '''
+class ConvBlock(torch.nn.Module):
+    def __init__(self, in_c, filters, bn, gn, af, use_dcn=False, stride=2):
         super(ConvBlock, self).__init__()
         filters1, filters2, filters3 = filters
 
-        self.conv1 = Conv2dUnit(filters1, 1, stride=1, padding=0, bias_attr=False, bn=1, act='relu', name=block_name+'.conv0')
-        self.conv2 = Conv2dUnit(filters2, 3, stride=stride, padding=1, bias_attr=False, bn=1, act='relu', name=block_name+'.conv1', use_dcn=use_dcn)
-        self.conv3 = Conv2dUnit(filters3, 1, stride=1, padding=0, bias_attr=False, bn=1, act=None, name=block_name+'.conv2')
+        self.conv1 = Conv2dUnit(in_c,     filters1, 1, stride=1, bn=bn, gn=gn, af=af, act='relu')
+        self.conv2 = Conv2dUnit(filters1, filters2, 3, stride=stride, bn=bn, gn=gn, af=af, act='relu', use_dcn=use_dcn)
+        self.conv3 = Conv2dUnit(filters2, filters3, 1, stride=1, bn=bn, gn=gn, af=af, act=None)
 
-        self.conv4 = Conv2dUnit(filters3, 1, stride=stride, padding=0, bias_attr=False, bn=1, act=None, name=block_name+'.conv3')
+        self.conv4 = Conv2dUnit(in_c, filters3, 1, stride=stride, bn=bn, gn=gn, af=af, act=None)
 
-    def __call__(self, input_tensor):
+        self.act = torch.nn.ReLU()
+
+    def forward(self, input_tensor):
         x = self.conv1(input_tensor)
         x = self.conv2(x)
         x = self.conv3(x)
         shortcut = self.conv4(input_tensor)
-        x = P.elementwise_add(x=x, y=shortcut, act=None)
-        x = P.relu(x)
+        x = x + shortcut
+        x = self.act(x)
         return x
 
 
-class IdentityBlock(object):
-    def __init__(self, filters, use_dcn=False, block_name=''):
+class IdentityBlock(torch.nn.Module):
+    def __init__(self, in_c, filters, bn, gn, af, use_dcn=False):
         super(IdentityBlock, self).__init__()
         filters1, filters2, filters3 = filters
 
-        self.conv1 = Conv2dUnit(filters1, 1, stride=1, padding=0, bias_attr=False, bn=1, act='relu', name=block_name+'.conv0')
-        self.conv2 = Conv2dUnit(filters2, 3, stride=1, padding=1, bias_attr=False, bn=1, act='relu', name=block_name+'.conv1', use_dcn=use_dcn)
-        self.conv3 = Conv2dUnit(filters3, 1, stride=1, padding=0, bias_attr=False, bn=1, act=None, name=block_name+'.conv2')
+        self.conv1 = Conv2dUnit(in_c,     filters1, 1, stride=1, bn=bn, gn=gn, af=af, act='relu')
+        self.conv2 = Conv2dUnit(filters1, filters2, 3, stride=1, bn=bn, gn=gn, af=af, act='relu', use_dcn=use_dcn)
+        self.conv3 = Conv2dUnit(filters2, filters3, 1, stride=1, bn=bn, gn=gn, af=af, act=None)
 
-    def __call__(self, input_tensor):
+        self.act = torch.nn.ReLU()
+
+    def forward(self, input_tensor):
         x = self.conv1(input_tensor)
         x = self.conv2(x)
         x = self.conv3(x)
-        x = P.elementwise_add(x=x, y=input_tensor, act=None)
-        x = P.relu(x)
+        x = x + input_tensor
+        x = self.act(x)
         return x
 
-class Resnet(object):
-    def __init__(self, depth, use_dcn=False):
+class Resnet(torch.nn.Module):
+    def __init__(self, depth, norm_type='affine_channel', feature_maps=[3, 4, 5], use_dcn=False):
         super(Resnet, self).__init__()
         assert depth in [50, 101]
         self.depth = depth
+        self.norm_type = norm_type
+        self.feature_maps = feature_maps
         self.use_dcn = use_dcn
-        self.conv1 = Conv2dUnit(64, 7, stride=2, padding=3, bias_attr=False, bn=1, act='relu', name='backbone.stage1.0.conv0')
+
+        bn = 0
+        gn = 0
+        af = 0
+        if norm_type == 'bn':
+            bn = 1
+        elif norm_type == 'gn':
+            gn = 1
+        elif norm_type == 'affine_channel':
+            af = 1
+        self.conv1 = Conv2dUnit(3, 64, 7, stride=2, bn=bn, gn=gn, af=af, act='relu')
+        self.pool = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # stage2
-        self.stage2_0 = ConvBlock([64, 64, 256], stride=1, block_name='backbone.stage2.0')
-        self.stage2_1 = IdentityBlock([64, 64, 256], block_name='backbone.stage2.1')
-        self.stage2_2 = IdentityBlock([64, 64, 256], block_name='backbone.stage2.2')
+        self.stage2_0 = ConvBlock(64, [64, 64, 256], bn, gn, af, stride=1)
+        self.stage2_1 = IdentityBlock(256, [64, 64, 256], bn, gn, af)
+        self.stage2_2 = IdentityBlock(256, [64, 64, 256], bn, gn, af)
 
         # stage3
-        self.stage3_0 = ConvBlock([128, 128, 512], block_name='backbone.stage3.0', use_dcn=use_dcn)
-        self.stage3_1 = IdentityBlock([128, 128, 512], block_name='backbone.stage3.1', use_dcn=use_dcn)
-        self.stage3_2 = IdentityBlock([128, 128, 512], block_name='backbone.stage3.2', use_dcn=use_dcn)
-        self.stage3_3 = IdentityBlock([128, 128, 512], block_name='backbone.stage3.3', use_dcn=use_dcn)
+        self.stage3_0 = ConvBlock(256, [128, 128, 512], bn, gn, af, use_dcn=use_dcn)
+        self.stage3_1 = IdentityBlock(512, [128, 128, 512], bn, gn, af, use_dcn=use_dcn)
+        self.stage3_2 = IdentityBlock(512, [128, 128, 512], bn, gn, af, use_dcn=use_dcn)
+        self.stage3_3 = IdentityBlock(512, [128, 128, 512], bn, gn, af, use_dcn=use_dcn)
 
         # stage4
-        self.stage4_0 = ConvBlock([256, 256, 1024], block_name='backbone.stage4.0', use_dcn=use_dcn)
+        self.stage4_0 = ConvBlock(512, [256, 256, 1024], bn, gn, af, use_dcn=use_dcn)
         k = 21
         if depth == 50:
             k = 4
         self.stage4_layers = []
         p = 1
         for i in range(k):
-            ly = IdentityBlock([256, 256, 1024], block_name='backbone.stage4.%d' % p, use_dcn=use_dcn)
+            ly = IdentityBlock(1024, [256, 256, 1024], bn, gn, af, use_dcn=use_dcn)
             self.stage4_layers.append(ly)
             p += 1
-        self.stage4_last_layer = IdentityBlock([256, 256, 1024], block_name='backbone.stage4.%d' % p, use_dcn=use_dcn)
+        self.stage4_last_layer = IdentityBlock(1024, [256, 256, 1024], bn, gn, af, use_dcn=use_dcn)
 
         # stage5
-        self.stage5_0 = ConvBlock([512, 512, 2048], block_name='backbone.stage5.0', use_dcn=use_dcn)
-        self.stage5_1 = IdentityBlock([512, 512, 2048], block_name='backbone.stage5.1', use_dcn=use_dcn)
-        self.stage5_2 = IdentityBlock([512, 512, 2048], block_name='backbone.stage5.2', use_dcn=use_dcn)
+        self.stage5_0 = ConvBlock(1024, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn)
+        self.stage5_1 = IdentityBlock(2048, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn)
+        self.stage5_2 = IdentityBlock(2048, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn)
 
 
-    def __call__(self, input_tensor):
+    def forward(self, input_tensor):
         x = self.conv1(input_tensor)
-        x = fluid.layers.pool2d(
-            input=x,
-            pool_size=3,
-            pool_stride=2,
-            pool_padding=1,
-            pool_type='max')
+        x = self.pool(x)
 
         # stage2
         x = self.stage2_0(x)
@@ -118,6 +126,16 @@ class Resnet(object):
         x = self.stage5_0(s16)
         x = self.stage5_1(x)
         s32 = self.stage5_2(x)
-        return [s4, s8, s16, s32]
+
+        outs = []
+        if 2 in self.feature_maps:
+            outs.append(s4)
+        if 3 in self.feature_maps:
+            outs.append(s8)
+        if 4 in self.feature_maps:
+            outs.append(s16)
+        if 5 in self.feature_maps:
+            outs.append(s32)
+        return outs
 
 

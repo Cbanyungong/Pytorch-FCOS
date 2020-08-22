@@ -3,108 +3,102 @@
 # ================================================================
 #
 #   Author      : miemie2013
-#   Created date: 2020-06-23 15:12:37
-#   Description : paddlepaddle_solo
+#   Created date: 2020-08-21 19:33:37
+#   Description : pytorch_fcos
 #
 # ================================================================
-import paddle.fluid as fluid
-from paddle.fluid.param_attr import ParamAttr
-from paddle.fluid.regularizer import L2Decay
+import torch
+import torch.nn.functional as F
 
 
-class Conv2dUnit(object):
+class AffineChannel(torch.nn.Module):
+    def __init__(self, num_features):
+        super(AffineChannel, self).__init__()
+        self.weight = torch.nn.Parameter(torch.randn(num_features, ))
+        self.bias = torch.nn.Parameter(torch.randn(num_features, ))
+
+    def forward(self, x):
+        N = x.size(0)
+        C = x.size(1)
+        H = x.size(2)
+        W = x.size(3)
+        transpose_x = x.permute(0, 2, 3, 1)
+        flatten_x = transpose_x.reshape(N*H*W, C)
+        out = flatten_x * self.weight + self.bias
+        out = out.reshape(N, H, W, C)
+        out = out.permute(0, 3, 1, 2)
+        return out
+
+
+class Mish(torch.nn.Module):
+    def __init__(self):
+        super(Mish, self).__init__()
+
+    def forward(self, x):
+        x = x * (torch.tanh(F.softplus(x)))
+        return x
+
+
+class Conv2dUnit(torch.nn.Module):
     def __init__(self,
+                 input_dim,
                  filters,
                  filter_size,
                  stride=1,
-                 padding=0,
                  bias_attr=False,
                  bn=0,
                  gn=0,
+                 af=0,
                  groups=32,
                  act=None,
-                 name='',
                  freeze_norm=False,
                  is_test=False,
                  norm_decay=0.,
                  use_dcn=False):
         super(Conv2dUnit, self).__init__()
-        self.filters = filters
-        self.filter_size = filter_size
-        self.stride = stride
-        self.padding = padding
-        self.bias_attr = bias_attr
-        self.bn = bn
-        self.gn = gn
         self.groups = groups
         self.act = act
-        self.name = name
         self.freeze_norm = freeze_norm
         self.is_test = is_test
         self.norm_decay = norm_decay
         self.use_dcn = use_dcn
 
-    def __call__(self, x):
-        conv_name = self.name + ".conv"
-        if self.use_dcn:
+        # conv
+        if use_dcn:
             pass
         else:
-            battr = None
-            if self.bias_attr:
-                battr = ParamAttr(name=conv_name + ".bias")
-            x = fluid.layers.conv2d(
-                input=x,
-                num_filters=self.filters,
-                filter_size=self.filter_size,
-                stride=self.stride,
-                padding=self.padding,
-                act=None,
-                param_attr=ParamAttr(name=conv_name + ".weights"),
-                bias_attr=battr,
-                name=conv_name + '.output.1')
+            self.conv = torch.nn.Conv2d(input_dim, filters, kernel_size=filter_size, stride=stride, padding=(filter_size - 1) // 2, bias=bias_attr)
+
+        # norm
+        self.bn = None
+        self.gn = None
+        self.af = None
+        if bn:
+            self.bn = torch.nn.BatchNorm2d(filters)
+        if gn:
+            self.gn = torch.nn.GroupNorm(num_groups=groups, num_channels=filters)
+        if af:
+            self.af = AffineChannel(filters)
+
+        # act
+        self.act = None
+        if act == 'relu':
+            self.act = torch.nn.ReLU()
+        elif act == 'leaky':
+            self.act = torch.nn.LeakyReLU(0.1)
+        elif act == 'mish':
+            self.act = Mish()
+
+    def forward(self, x):
+        x = self.conv(x)
         if self.bn:
-            bn_name = self.name + ".bn"
-            norm_lr = 0. if self.freeze_norm else 1.   # 归一化层学习率
-            norm_decay = self.norm_decay   # 衰减
-            pattr = ParamAttr(
-                name=bn_name + '.scale',
-                learning_rate=norm_lr,
-                regularizer=L2Decay(norm_decay))   # L2权重衰减正则化
-            battr = ParamAttr(
-                name=bn_name + '.offset',
-                learning_rate=norm_lr,
-                regularizer=L2Decay(norm_decay))   # L2权重衰减正则化
-            x = fluid.layers.batch_norm(
-                input=x,
-                name=bn_name + '.output.1',
-                is_test=self.is_test,  # 冻结层时（即trainable=False），bn的均值、标准差也还是会变化，只有设置is_test=True才保证不变
-                param_attr=pattr,
-                bias_attr=battr,
-                moving_mean_name=bn_name + '.mean',
-                moving_variance_name=bn_name + '.var')
+            x = self.bn(x)
         if self.gn:
-            gn_name = self.name + ".gn"
-            norm_lr = 0. if self.freeze_norm else 1.   # 归一化层学习率
-            norm_decay = self.norm_decay   # 衰减
-            pattr = ParamAttr(
-                name=gn_name + '.scale',
-                learning_rate=norm_lr,
-                regularizer=L2Decay(norm_decay))   # L2权重衰减正则化
-            battr = ParamAttr(
-                name=gn_name + '.offset',
-                learning_rate=norm_lr,
-                regularizer=L2Decay(norm_decay))   # L2权重衰减正则化
-            x = fluid.layers.group_norm(
-                input=x,
-                groups=self.groups,
-                name=gn_name + '.output.1',
-                param_attr=pattr,
-                bias_attr=battr)
-        if self.act == 'leaky':
-            x = fluid.layers.leaky_relu(x, alpha=0.1)
-        elif self.act == 'relu':
-            x = fluid.layers.relu(x)
+            x = self.gn(x)
+        if self.act:
+            x = self.act(x)
         return x
+
 
 
 
