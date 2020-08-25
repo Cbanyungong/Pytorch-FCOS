@@ -3,8 +3,8 @@
 # ================================================================
 #
 #   Author      : miemie2013
-#   Created date: 2020-06-23 15:12:37
-#   Description : paddlepaddle_solo
+#   Created date: 2020-08-21 19:33:37
+#   Description : pytorch_fcos
 #
 # ================================================================
 import numpy as np

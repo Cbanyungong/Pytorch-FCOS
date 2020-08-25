@@ -13,6 +13,9 @@ from model.custom_layers import Conv2dUnit
 
 class ConvBlock(torch.nn.Module):
     def __init__(self, in_c, filters, bn, gn, af, use_dcn=False, stride=2):
+        '''
+        ResNetVB的下采样是在中间的3x3卷积层进行。
+        '''
         super(ConvBlock, self).__init__()
         filters1, filters2, filters3 = filters
 

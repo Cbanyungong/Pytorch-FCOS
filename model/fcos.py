@@ -3,14 +3,14 @@
 # ================================================================
 #
 #   Author      : miemie2013
-#   Created date: 2020-06-23 15:12:37
-#   Description : paddlepaddle_solo
+#   Created date: 2020-08-21 19:33:37
+#   Description : pytorch_fcos
 #
 # ================================================================
 
-class SOLO(object):
+class FCOS(object):
     def __init__(self, backbone, neck, head):
-        super(SOLO, self).__init__()
+        super(FCOS, self).__init__()
         self.backbone = backbone
         self.neck = neck
         self.head = head
