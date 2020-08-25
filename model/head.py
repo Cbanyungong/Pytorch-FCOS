@@ -8,398 +8,320 @@
 #
 # ================================================================
 import numpy as np
-import paddle.fluid as fluid
-import paddle.fluid.layers as P
-from paddle.fluid.param_attr import ParamAttr
-from paddle.fluid.regularizer import L2Decay
+import torch
+import math
+
 from model.custom_layers import Conv2dUnit
 
 
-def concat_coord(x):
-    ins_feat = x  # [N, c, h, w]
-
-    batch_size = P.shape(x)[0]
-    h = P.shape(x)[2]
-    w = P.shape(x)[3]
-    float_h = P.cast(h, 'float32')
-    float_w = P.cast(w, 'float32')
-
-    y_range = P.range(0., float_h, 1., dtype='float32')     # [h, ]
-    y_range = 2.0 * y_range / (float_h - 1.0) - 1.0
-    x_range = P.range(0., float_w, 1., dtype='float32')     # [w, ]
-    x_range = 2.0 * x_range / (float_w - 1.0) - 1.0
-    x_range = P.reshape(x_range, (1, -1))   # [1, w]
-    y_range = P.reshape(y_range, (-1, 1))   # [h, 1]
-    x = P.expand(x_range, [h, 1])     # [h, w]
-    y = P.expand(y_range, [1, w])     # [h, w]
-
-    x = P.reshape(x, (1, 1, h, w))   # [1, 1, h, w]
-    y = P.reshape(y, (1, 1, h, w))   # [1, 1, h, w]
-    x = P.expand(x, [batch_size, 1, 1, 1])   # [N, 1, h, w]
-    y = P.expand(y, [batch_size, 1, 1, 1])   # [N, 1, h, w]
-
-    ins_feat_x = P.concat([ins_feat, x], axis=1)   # [N, c+1, h, w]
-    ins_feat_y = P.concat([ins_feat, y], axis=1)   # [N, c+1, h, w]
-
-    return [ins_feat_x, ins_feat_y]
-
-def points_nms(heat, kernel=2):
-    # kernel must be 2
-    hmax = P.pool2d(heat, pool_size=kernel, pool_stride=1,
-                    pool_padding=[[0, 0], [0, 0], [1, 0], [1, 0]],
-                    pool_type='max')
-    keep = P.cast(P.equal(hmax, heat), 'float32')
-    return heat * keep
-
-
-def matrix_nms(seg_masks, cate_labels, cate_scores, kernel='gaussian', sigma=2.0, sum_masks=None):
-    """Matrix NMS for multi-class masks.
-
-    Args:
-        seg_masks (Tensor): shape (n, h, w)   0、1组成的掩码
-        cate_labels (Tensor): shape (n), mask labels in descending order
-        cate_scores (Tensor): shape (n), mask scores in descending order
-        kernel (str):  'linear' or 'gauss'
-        sigma (float): std in gaussian method
-        sum_masks (Tensor):  shape (n, )      n个物体的面积
-
-    Returns:
-        Tensor: cate_scores_update, tensors of shape (n)
-    """
-    n_samples = P.shape(cate_labels)[0]   # 物体数
-    seg_masks = P.reshape(seg_masks, (n_samples, -1))   # [n, h*w]
-    # inter.
-    inter_matrix = P.matmul(seg_masks, seg_masks, transpose_y=True)   # [n, n] 自己乘以自己的转置。两两之间的交集面积。
-    # union.
-    sum_masks_x = P.expand(P.reshape(sum_masks, (1, -1)), [n_samples, 1])     # [n, n]  sum_masks重复了n行得到sum_masks_x
-    # iou.
-    iou_matrix = inter_matrix / (sum_masks_x + P.transpose(sum_masks_x, [1, 0]) - inter_matrix)
-    rows = P.range(0, n_samples, 1, 'int32')
-    cols = P.range(0, n_samples, 1, 'int32')
-    rows = P.expand(P.reshape(rows, (1, -1)), [n_samples, 1])
-    cols = P.expand(P.reshape(cols, (-1, 1)), [1, n_samples])
-    tri_mask = P.cast(rows > cols, 'float32')
-    iou_matrix = tri_mask * iou_matrix   # [n, n]   只取上三角部分
-
-    # label_specific matrix.
-    cate_labels_x = P.expand(P.reshape(cate_labels, (1, -1)), [n_samples, 1])     # [n, n]  cate_labels重复了n行得到cate_labels_x
-    label_matrix = P.cast(P.equal(cate_labels_x, P.transpose(cate_labels_x, [1, 0])), 'float32')
-    label_matrix = tri_mask * label_matrix   # [n, n]   只取上三角部分
-
-    # IoU compensation
-    compensate_iou = P.reduce_max(iou_matrix * label_matrix, dim=0)
-    compensate_iou = P.expand(P.reshape(compensate_iou, (1, -1)), [n_samples, 1])     # [n, n]
-    compensate_iou = P.transpose(compensate_iou, [1, 0])      # [n, n]
-
-    # IoU decay
-    decay_iou = iou_matrix * label_matrix
-
-    # # matrix nms
-    if kernel == 'gaussian':
-        decay_matrix = P.exp(-1 * sigma * (decay_iou ** 2))
-        compensate_matrix = P.exp(-1 * sigma * (compensate_iou ** 2))
-        decay_coefficient = P.reduce_min((decay_matrix / compensate_matrix), dim=0)
-    elif kernel == 'linear':
-        decay_matrix = (1-decay_iou)/(1-compensate_iou)
-        decay_coefficient = P.reduce_min(decay_matrix, dim=0)
-    else:
-        raise NotImplementedError
-
-    # update the score.
-    cate_scores_update = cate_scores * decay_coefficient
-    return cate_scores_update
-
-
-class DecoupledSOLOHead(object):
+class FCOSHead(torch.nn.Module):
+    # def __init__(self,
+    #              num_chan=256,
+    #              add_extra_convs=False):
+    #     super(FCOSHead, self).__init__()
+    #     self.aaaaaaaaaaaaaaaaa = num_chan
+    # def forward(self, body_feats, eval=False):
+    #     pred = self.fcos_head.get_prediction(body_feats, im_info)
+    #     reverse_body_feats = body_feats[::-1]   #   [s32, s16, s8]
+    #     num_backbone_stages = len(reverse_body_feats)   # 3
     def __init__(self,
                  num_classes=80,
-                 in_channels=256,
-                 seg_feat_channels=256,
-                 stacked_convs=7,
-                 strides=[8, 8, 16, 32, 32],
-                 base_edge_list=(16, 32, 64, 128, 256),
-                 scale_ranges=((1, 96), (48, 192), (96, 384), (192, 768), (384, 2048)),
-                 sigma=0.2,
-                 num_grids=[40, 36, 24, 16, 12],
-                 cate_down_pos=0,
-                 with_deform=False,
-                 loss_ins=None,
-                 loss_cate=None):
-        super(DecoupledSOLOHead, self).__init__()
+                 fpn_stride=[8, 16, 32, 64, 128],
+                 prior_prob=0.01,
+                 num_convs=4,
+                 norm_type="gn",
+                 fcos_loss=None,
+                 norm_reg_targets=False,
+                 centerness_on_reg=False,
+                 use_dcn_in_tower=False
+                 # nms=MultiClassNMS(
+                 #     score_threshold=0.01,
+                 #     nms_top_k=1000,
+                 #     keep_top_k=100,
+                 #     nms_threshold=0.45,
+                 #     background_label=-1).__dict__
+                 ):
+        super(FCOSHead, self).__init__()
         self.num_classes = num_classes
-        self.seg_num_grids = num_grids
-        self.in_channels = in_channels
-        self.seg_feat_channels = seg_feat_channels
-        self.stacked_convs = stacked_convs
-        self.strides = strides
-        self.sigma = sigma
-        self.cate_down_pos = cate_down_pos
-        self.base_edge_list = base_edge_list
-        self.scale_ranges = scale_ranges
-        self.with_deform = with_deform
-        # self.loss_cate = build_loss(loss_cate)
-        # self.ins_loss_weight = loss_ins['loss_weight']
-        self._init_layers()
+        self.fpn_stride = fpn_stride[::-1]
+        self.prior_prob = prior_prob
+        self.num_convs = num_convs
+        self.norm_reg_targets = norm_reg_targets
+        self.centerness_on_reg = centerness_on_reg
+        self.use_dcn_in_tower = use_dcn_in_tower
+        self.norm_type = norm_type
+        self.fcos_loss = fcos_loss
+        self.batch_size = 8
+        # self.nms = nms
+        # if isinstance(nms, dict):
+        #     self.nms = MultiClassNMS(**nms)
 
-    def _init_layers(self):
-        self.ins_convs_x = []
-        self.ins_convs_y = []
-        self.cate_convs = []
 
-        for i in range(self.stacked_convs):
-            conv2d_1 = Conv2dUnit(self.seg_feat_channels, 3, stride=1, padding=1, bias_attr=False, gn=1, groups=32, act='relu', name='bbox_head.ins_convs_x.%d' % i)
-            self.ins_convs_x.append(conv2d_1)
+        self.scales_on_reg = []       # 回归分支（预测框坐标）的系数
+        self.cls_convs_per_feature = []   # 每个fpn输出特征图再进行卷积的卷积层，用于预测类别
+        self.reg_convs_per_feature = []   # 每个fpn输出特征图再进行卷积的卷积层，用于预测坐标
+        self.ctn_convs_per_feature = []   # 用于预测centerness
+        n = len(self.fpn_stride)      # 有n个输出层
+        for i in range(n):     # 遍历每个输出层
+            scale = torch.nn.Parameter(torch.ones(1, ))
+            self.scales_on_reg.append(scale)
+            cls_convs_this_feature = []   # 这个fpn输出特征图再进行卷积的卷积层，用于预测类别
+            reg_convs_this_feature = []   # 这个fpn输出特征图再进行卷积的卷积层，用于预测坐标
+            for lvl in range(0, self.num_convs):
+                # 使用gn，组数是32，而且带激活relu
+                cls_conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
+                cls_convs_this_feature.append(cls_conv_layer)
+                reg_conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
+                reg_convs_this_feature.append(reg_conv_layer)
 
-            conv2d_2 = Conv2dUnit(self.seg_feat_channels, 3, stride=1, padding=1, bias_attr=False, gn=1, groups=32, act='relu', name='bbox_head.ins_convs_y.%d' % i)
-            self.ins_convs_y.append(conv2d_2)
+            # 类别分支最后的卷积
+            cls_last_conv_layer = Conv2dUnit(256, self.num_classes, 3, stride=1, bias_attr=True, act=None)
+            # 坐标分支最后的卷积
+            reg_last_conv_layer = Conv2dUnit(256, 4, 3, stride=1, bias_attr=True, act=None)
+            # centerness分支
+            ctn_last_conv_layer = Conv2dUnit(256, 1, 3, stride=1, bias_attr=True, act=None)
 
-            conv2d_3 = Conv2dUnit(self.seg_feat_channels, 3, stride=1, padding=1, bias_attr=False, gn=1, groups=32, act='relu', name='bbox_head.cate_convs.%d' % i)
-            self.cate_convs.append(conv2d_3)
+            cls_convs_this_feature.append(cls_last_conv_layer)
+            reg_convs_this_feature.append(reg_last_conv_layer)
+            self.cls_convs_per_feature.append(cls_convs_this_feature)
+            self.reg_convs_per_feature.append(reg_convs_this_feature)
+            self.ctn_convs_per_feature.append(ctn_last_conv_layer)
 
-        self.dsolo_ins_list_x = []
-        self.dsolo_ins_list_y = []
-        for i, seg_num_grid in enumerate(self.seg_num_grids):
-            conv2d_1 = Conv2dUnit(seg_num_grid, 3, stride=1, padding=1, bias_attr=True, name='bbox_head.dsolo_ins_list_x.%d' % i)
-            self.dsolo_ins_list_x.append(conv2d_1)
-            conv2d_2 = Conv2dUnit(seg_num_grid, 3, stride=1, padding=1, bias_attr=True, name='bbox_head.dsolo_ins_list_y.%d' % i)
-            self.dsolo_ins_list_y.append(conv2d_2)
-        self.dsolo_cate = Conv2dUnit(self.num_classes, 3, stride=1, padding=1, bias_attr=True, name='head.dsolo_cate')
+        self.relu = torch.nn.ReLU()
 
-    def __call__(self, feats, cfg, eval):
-        # DecoupledSOLOHead都是这样，一定有5个张量，5个张量的strides=[8, 8, 16, 32, 32]，所以先对首尾张量进行插值。
-        new_feats = [P.resize_bilinear(feats[0], out_shape=P.shape(feats[1])[2:]),
-                     feats[1],
-                     feats[2],
-                     feats[3],
-                     P.resize_bilinear(feats[4], out_shape=P.shape(feats[3])[2:])]
-        featmap_sizes = [P.shape(featmap)[2:] for featmap in new_feats]
-        upsampled_size = (featmap_sizes[0][0] * 2, featmap_sizes[0][1] * 2)   # stride=4
 
-        ins_pred_x_list, ins_pred_y_list, cate_pred_list = [], [], []
-        for idx in range(len(self.seg_num_grids)):
-            ins_feat = new_feats[idx]   # 给掩码分支
-            cate_feat = new_feats[idx]  # 给分类分支
-
-            # ============ ins branch (掩码分支，特征图形状是[N, grid, mask_h, mask_w]) ============
-            ins_feat_x, ins_feat_y = concat_coord(ins_feat)   # [N, c+1, h, w]、 [N, c+1, h, w]
-
-            for ins_layer_x, ins_layer_y in zip(self.ins_convs_x, self.ins_convs_y):
-                ins_feat_x = ins_layer_x(ins_feat_x)   # [N, 256, h, w]
-                ins_feat_y = ins_layer_y(ins_feat_y)   # [N, 256, h, w]
-
-            ins_feat_x = P.resize_bilinear(ins_feat_x, scale=float(2))   # [N, 256, 2*h, 2*w]
-            ins_feat_y = P.resize_bilinear(ins_feat_y, scale=float(2))   # [N, 256, 2*h, 2*w]
-
-            ins_pred_x = self.dsolo_ins_list_x[idx](ins_feat_x)   # [N, grid, 2*h, 2*w]，即[N, grid, mask_h, mask_w]
-            ins_pred_y = self.dsolo_ins_list_y[idx](ins_feat_y)   # [N, grid, 2*h, 2*w]，即[N, grid, mask_h, mask_w]
-            # 若输入图片大小为416x416，那么new_feats里图片大小应该为[52, 52, 26, 13, 13]，因为strides=[8, 8, 16, 32, 32]。
-            # 那么对应的ins_pred_x大小应该为[104, 104, 52, 26, 26]；
-            # 那么对应的ins_pred_y大小应该为[104, 104, 52, 26, 26]。
-
-            # ============ cate branch (分类分支，特征图形状是[N, num_classes=80, grid, grid]) ============
-            for i, cate_layer in enumerate(self.cate_convs):
-                if i == self.cate_down_pos:   # 第0次都要插值成seg_num_grid x seg_num_grid的大小。
-                    seg_num_grid = self.seg_num_grids[idx]
-                    cate_feat = P.resize_bilinear(cate_feat, out_shape=(seg_num_grid, seg_num_grid))
-                cate_feat = cate_layer(cate_feat)
-
-            cate_pred = self.dsolo_cate(cate_feat)   # 种类分支，通道数变成了80，[N, 80, grid, grid]
-
-            # ============ 是否是预测状态 ============
-            if eval:
-                ins_pred_x = P.sigmoid(ins_pred_x)
-                ins_pred_x = P.resize_bilinear(ins_pred_x, out_shape=upsampled_size)
-
-                ins_pred_y = P.sigmoid(ins_pred_y)
-                ins_pred_y = P.resize_bilinear(ins_pred_y, out_shape=upsampled_size)
-                # 若输入图片大小为416x416，那么new_feats里图片大小应该为[52, 52, 26, 13, 13]，因为strides=[8, 8, 16, 32, 32]。
-                # 那么此处的5个ins_pred_x大小应该为[104, 104, 104, 104, 104]；
-                # 那么此处的5个ins_pred_y大小应该为[104, 104, 104, 104, 104]。即stride=4。训练时不会执行这里。
-                cate_pred = P.sigmoid(cate_pred)
-                cate_pred = points_nms(cate_pred)
-            ins_pred_x_list.append(ins_pred_x)
-            ins_pred_y_list.append(ins_pred_y)
-            cate_pred_list.append(cate_pred)
-        if eval:
-            num_layers = len(self.seg_num_grids)
-            pred_cate = []
-            for i in range(num_layers):
-                c = cate_pred_list[i]   # 从小感受野 到 大感受野 （从多格子 到 少格子）
-                c = P.transpose(c, perm=[0, 2, 3, 1])
-                c = P.reshape(c, (1, -1, self.num_classes))
-                pred_cate.append(c)
-            pred_mask_x = P.concat(ins_pred_x_list, axis=1)
-            pred_mask_y = P.concat(ins_pred_y_list, axis=1)
-            pred_cate = P.concat(pred_cate, axis=1)
-            output = self.get_seg_single(pred_cate[0],
-                   pred_mask_x[0],
-                   pred_mask_y[0],
-                   upsampled_size,
-                   upsampled_size,
-                   cfg)
-            return output
-        return ins_pred_x_list + ins_pred_y_list + cate_pred_list
-
-    def get_seg_single(self,
-                       cate_preds,
-                       seg_preds_x,
-                       seg_preds_y,
-                       featmap_size,
-                       ori_shape,
-                       cfg):
-        '''
+    def _fcos_head(self, features, fpn_stride, i, is_training=False):
+        """
         Args:
-            cate_preds:    同一张图片5个输出层的输出汇合  [40*40+36*36+24*24+16*16+12*12, 80]
-            seg_preds_x:   同一张图片5个输出层的输出汇合  [40+36+24+16+12, 104, 104]
-            seg_preds_y:   同一张图片5个输出层的输出汇合  [40+36+24+16+12, 104, 104]
-            featmap_size:  [s4, s4]        一维张量  1-D Tensor
-            img_shape:     [800, 1216, 3]  一维张量  1-D Tensor
-            ori_shape:     [427, 640, 3]   一维张量  1-D Tensor
-            scale_factor:  800/427
-            cfg:
-            rescale:
-            debug:
-
-        Returns:
-
-        '''
-        # trans trans_diff.
-        seg_num_grids = P.assign(np.array(self.seg_num_grids))
-        trans_size = P.cumsum(P.pow(seg_num_grids, 2))
-        seg_size = P.cumsum(seg_num_grids)    # [40, 40+36, 40+36+24, ...]
-
-        trans_diff = []
-        seg_diff = []
-        num_grids = []
-        strides = []
-        n_stage = len(self.seg_num_grids)   # 5个输出层
-        for ind_ in range(n_stage):
-            if ind_ == 0:
-                # 第0个输出层的分类分支在cate_preds中的偏移是0
-                trans_diff_ = P.zeros([self.seg_num_grids[ind_] ** 2, ], 'int32')
-                # 第0个输出层的掩码分支在seg_preds_x中的偏移是0
-                seg_diff_ = P.zeros([self.seg_num_grids[ind_] ** 2, ], 'int32')
-            else:
-                # 第1个输出层的分类分支在cate_preds中的偏移是40*40，第2个输出层的分类分支在cate_preds中的偏移是40*40+36*36，...
-                trans_diff_ = P.zeros([self.seg_num_grids[ind_] ** 2, ], 'int32') + trans_size[ind_ - 1]
-                # 第0个输出层的掩码分支在seg_preds_x中的偏移是40，第0个输出层的掩码分支在seg_preds_x中的偏移是40+36，...
-                seg_diff_ = P.zeros([self.seg_num_grids[ind_] ** 2, ], 'int32') + seg_size[ind_ - 1]
-            # 第0个输出层的一行（或一列）的num_grids是40，第1个输出层的一行（或一列）的num_grids是36，...
-            num_grids_ = P.zeros([self.seg_num_grids[ind_] ** 2, ], 'int32') + self.seg_num_grids[ind_]
-            # 第0个输出层的stride是8，第1个输出层的stride是8，...
-            strides_ = P.zeros([self.seg_num_grids[ind_] ** 2, ], 'float32') + float(self.strides[ind_])
-
-            trans_diff.append(trans_diff_)
-            seg_diff.append(seg_diff_)
-            num_grids.append(num_grids_)
-            strides.append(strides_)
-        trans_diff = P.concat(trans_diff, axis=0)   # [3872, ]
-        seg_diff = P.concat(seg_diff, axis=0)       # [3872, ]
-        num_grids = P.concat(num_grids, axis=0)     # [3872, ]
-        strides = P.concat(strides, axis=0)         # [3872, ]
-
-        # process. 处理。
-        inds = P.where(cate_preds > cfg.score_thr)   # [[3623, 17], [3623, 60], [3639, 17], ...]   分数超过阈值的物体所在格子
-        inds_extra = P.zeros([1, 2], 'int64')
-        inds = P.concat([inds, inds_extra], axis=0)
-        cate_scores = P.gather_nd(cate_preds, inds)
-
-        trans_diff = P.gather(trans_diff, inds[:, 0])   # [3472, 3472, 3472, ...]   格子所在输出层的分类分支在cate_preds中的偏移
-        seg_diff = P.gather(seg_diff, inds[:, 0])       # [100, 100, 100, ...]      格子所在输出层的掩码分支在seg_preds_x中的偏移
-        num_grids = P.gather(num_grids, inds[:, 0])     # [16, 16, 16, ...]         格子所在输出层每一行有多少个格子
-        strides = P.gather(strides, inds[:, 0])         # [32, 32, 32, ...]         格子所在输出层的stride
-
-        loc = P.cast(inds[:, 0], 'int32')
-        y_inds = (loc - trans_diff) // num_grids   # 格子行号
-        x_inds = (loc - trans_diff) % num_grids    # 格子列号
-        y_inds += seg_diff   # 格子行号在seg_preds_y中的绝对位置
-        x_inds += seg_diff   # 格子列号在seg_preds_x中的绝对位置
-
-        cate_labels = inds[:, 1]   # 类别
-        mask_x = P.gather(seg_preds_x, x_inds)   # [11, s4, s4]
-        mask_y = P.gather(seg_preds_y, y_inds)   # [11, s4, s4]
-        seg_masks_soft = mask_x * mask_y    # [11, s4, s4]  物体的mask，逐元素相乘得到。
-        seg_masks = P.cast(seg_masks_soft > cfg.mask_thr, 'float32')
-        sum_masks = P.reduce_sum(seg_masks, dim=[1, 2])   # [11, ]  11个物体的面积
-        keep = P.where(sum_masks > strides)   # 面积大于这一层的stride才保留
-
-        def exist_objs_1(cate_scores, seg_masks_soft, seg_masks, sum_masks, cate_labels, keep):
-            seg_masks_soft = P.gather_nd(seg_masks_soft, keep)  # 用概率表示的掩码
-            seg_masks = P.gather_nd(seg_masks, keep)  # 用True、False表示的掩码
-            cate_scores = P.gather_nd(cate_scores, keep)  # 类别得分
-            sum_masks = P.gather_nd(sum_masks, keep)  # 面积
-            cate_labels = P.gather_nd(cate_labels, keep)  # 类别
-            # mask scoring   是1的像素的 概率总和 占 面积（是1的像素数） 的比重
-            seg_score = P.reduce_sum(seg_masks_soft * seg_masks, dim=[1, 2]) / sum_masks
-            cate_scores *= seg_score  # 类别得分乘上这个比重得到新的类别得分。因为有了mask scoring机制，所以分数一般比其它算法如yolact少。
+            features (Variables): feature map from FPN
+            fpn_stride     (int): the stride of current feature map
+            is_training   (bool): whether is train or test mode
+        """
+        fpn_scale = self.scales_on_reg[i]
+        subnet_blob_cls = features
+        subnet_blob_reg = features
+        # if self.use_dcn_in_tower:
+        #     conv_norm = DeformConvNorm
+        # else:
+        #     conv_norm = ConvNorm
+        for lvl in range(0, self.num_convs):
+            subnet_blob_cls = self.cls_convs_per_feature[i][lvl](subnet_blob_cls)
+            subnet_blob_reg = self.reg_convs_per_feature[i][lvl](subnet_blob_reg)
 
 
-            # sort and keep top nms_pre
-            _, sort_inds = P.argsort(cate_scores, axis=-1, descending=True)  # [7, 5, 8, ...] 降序。最大值的下标，第2大值的下标，...
-            sort_inds = sort_inds[:cfg.nms_pre]  # 最多cfg.nms_pre个。
-            seg_masks_soft = P.gather(seg_masks_soft, sort_inds)  # 按照分数降序
-            seg_masks = P.gather(seg_masks, sort_inds)            # 按照分数降序
-            cate_scores = P.gather(cate_scores, sort_inds)
-            sum_masks = P.gather(sum_masks, sort_inds)
-            cate_labels = P.gather(cate_labels, sort_inds)
-
-            # Matrix NMS
-            cate_scores = matrix_nms(seg_masks, cate_labels, cate_scores,
-                                     kernel=cfg.kernel, sigma=cfg.sigma, sum_masks=sum_masks)
-
-            keep = P.where(cate_scores > cfg.update_thr)   # 大于第二个分数阈值才保留
-
-            def exist_objs_2(cate_scores, seg_masks_soft, cate_labels, keep):
-                keep = P.reshape(keep, (-1,))
-                seg_masks_soft = P.gather(seg_masks_soft, keep)
-                cate_scores = P.gather(cate_scores, keep)
-                cate_labels = P.gather(cate_labels, keep)
-
-                # sort and keep top_k
-                _, sort_inds = P.argsort(cate_scores, axis=-1, descending=True)
-                sort_inds = sort_inds[:cfg.max_per_img]
-                seg_masks_soft = P.gather(seg_masks_soft, sort_inds)
-                cate_scores = P.gather(cate_scores, sort_inds)
-                cate_labels = P.gather(cate_labels, sort_inds)
-
-                # 插值前处理
-                seg_masks_soft = P.unsqueeze(seg_masks_soft, axes=[0])
-
-                # seg_masks_soft = tf.image.resize_images(seg_masks_soft, tf.convert_to_tensor([featmap_size[0] * 4, featmap_size[1] * 4]), method=tf.image.ResizeMethod.BILINEAR)
-                # seg_masks = tf.image.resize_images(seg_masks_soft, tf.convert_to_tensor([ori_shape[0], ori_shape[1]]), method=tf.image.ResizeMethod.BILINEAR)
-
-                seg_masks_soft = P.resize_bilinear(seg_masks_soft, out_shape=[featmap_size[0] * 4, featmap_size[1] * 4])
-                seg_masks = P.resize_bilinear(seg_masks_soft, out_shape=[ori_shape[0], ori_shape[1]])
-
-                # 插值后处理
-                seg_masks = P.cast(seg_masks > cfg.mask_thr, 'float32')
-                cate_labels = P.reshape(cate_labels, (1, -1))
-                cate_scores = P.reshape(cate_scores, (1, -1))
-                return seg_masks, cate_labels, cate_scores
+        cls_logits = self.cls_convs_per_feature[i][-1](subnet_blob_cls)   # 通道数变成类别数
+        bbox_reg = self.reg_convs_per_feature[i][-1](subnet_blob_reg)     # 通道数变成4
+        bbox_reg = bbox_reg * fpn_scale     # 预测坐标的特征图整体乘上fpn_scale，是一个可学习参数
+        # 如果 归一化坐标分支，bbox_reg进行relu激活
+        if self.norm_reg_targets:
+            bbox_reg = self.relu(bbox_reg)
+            if not is_training:   # 验证状态的话，bbox_reg再乘以下采样倍率
+                bbox_reg = bbox_reg * fpn_stride
+        else:
+            bbox_reg = torch.exp(bbox_reg)
 
 
-            def no_objs_2():
-                seg_masks = P.zeros([1, 1, 1, 1], 'float32') - 1.0
-                cate_labels = P.zeros([1, 1], 'int64') - 1
-                cate_scores = P.zeros([1, 1], 'float32') - 1.0
-                return seg_masks, cate_labels, cate_scores
+        # ============= centerness分支，默认是用坐标分支接4个卷积层之后的结果subnet_blob_reg =============
+        if self.centerness_on_reg:
+            centerness = self.cls_convs_per_feature[i](subnet_blob_reg)
+        else:
+            centerness = self.cls_convs_per_feature[i](subnet_blob_cls)
+        return cls_logits, bbox_reg, centerness
 
-            # 是否有物体
-            seg_masks, cate_labels, cate_scores = P.cond(P.shape(keep)[0] == 0,
-                                                         no_objs_2,
-                                                         lambda: exist_objs_2(cate_scores, seg_masks_soft, cate_labels, keep))
-            return seg_masks, cate_labels, cate_scores
+    def _get_output(self, body_feats, is_training=False):
+        """
+        Args:
+            body_feates (list): the list of fpn feature maps
+            is_training (bool): whether is train or test mode
+        Return:
+            cls_logits (Variables): prediction for classification
+            bboxes_reg (Variables): prediction for bounding box
+            centerness (Variables): prediction for ceterness
+        """
+        cls_logits = []
+        bboxes_reg = []
+        centerness = []
+        assert len(body_feats) == len(self.fpn_stride), \
+            "The size of body_feats is not equal to size of fpn_stride"
+        i = 0
+        for features, fpn_stride in zip(body_feats, self.fpn_stride):
+            cls_pred, bbox_pred, ctn_pred = self._fcos_head(
+                features, fpn_stride, i, is_training=is_training)
+            cls_logits.append(cls_pred)
+            bboxes_reg.append(bbox_pred)
+            centerness.append(ctn_pred)
+            i += 1
+        return cls_logits, bboxes_reg, centerness
 
-        def no_objs_1():
-            seg_masks = P.zeros([1, 1, 1, 1], 'float32') - 1.0
-            cate_labels = P.zeros([1, 1], 'int64') - 1
-            cate_scores = P.zeros([1, 1], 'float32') - 1.0
-            return seg_masks, cate_labels, cate_scores
+    def _compute_locations(self, features):
+        """
+        Args:
+            features (list): List of Variables for FPN feature maps
+        Return:
+            Anchor points for each feature map pixel
+        """
+        locations = []
+        for lvl, fpn_name in enumerate(features):
+            feature = features[fpn_name]
+            shape_fm = fluid.layers.shape(feature)
+            shape_fm.stop_gradient = True
+            h = shape_fm[2]
+            w = shape_fm[3]
+            fpn_stride = self.fpn_stride[lvl]
+            shift_x = fluid.layers.range(
+                0, w * fpn_stride, fpn_stride, dtype='float32')
+            shift_y = fluid.layers.range(
+                0, h * fpn_stride, fpn_stride, dtype='float32')
+            shift_x = fluid.layers.unsqueeze(shift_x, axes=[0])
+            shift_y = fluid.layers.unsqueeze(shift_y, axes=[1])
+            shift_x = fluid.layers.expand_as(
+                shift_x, target_tensor=feature[0, 0, :, :])
+            shift_y = fluid.layers.expand_as(
+                shift_y, target_tensor=feature[0, 0, :, :])
+            shift_x.stop_gradient = True
+            shift_y.stop_gradient = True
+            shift_x = fluid.layers.reshape(shift_x, shape=[-1])
+            shift_y = fluid.layers.reshape(shift_y, shape=[-1])
+            location = fluid.layers.stack(
+                [shift_x, shift_y], axis=-1) + fpn_stride // 2
+            location.stop_gradient = True
+            locations.append(location)
+        return locations
 
-        # 是否有物体
-        seg_masks, cate_labels, cate_scores = P.cond(P.shape(keep)[0] == 0,
-                                                     no_objs_1,
-                                                     lambda: exist_objs_1(cate_scores, seg_masks_soft, seg_masks, sum_masks, cate_labels, keep))
-        return [seg_masks, cate_labels, cate_scores]
+    def __merge_hw(self, input, ch_type="channel_first"):
+        """
+        Args:
+            input (Variables): Feature map whose H and W will be merged into one dimension
+            ch_type     (str): channel_first / channel_last
+        Return:
+            new_shape (Variables): The new shape after h and w merged into one dimension
+        """
+        shape_ = fluid.layers.shape(input)
+        bs = shape_[0]
+        ch = shape_[1]
+        hi = shape_[2]
+        wi = shape_[3]
+        img_size = hi * wi
+        img_size.stop_gradient = True
+        if ch_type == "channel_first":
+            new_shape = fluid.layers.concat([bs, ch, img_size])
+        elif ch_type == "channel_last":
+            new_shape = fluid.layers.concat([bs, img_size, ch])
+        else:
+            raise KeyError("Wrong ch_type %s" % ch_type)
+        new_shape.stop_gradient = True
+        return new_shape
+
+    def _postprocessing_by_level(self, locations, box_cls, box_reg, box_ctn,
+                                 im_info):
+        """
+        Args:
+            locations (Variables): anchor points for current layer
+            box_cls   (Variables): categories prediction
+            box_reg   (Variables): bounding box prediction
+            box_ctn   (Variables): centerness prediction
+            im_info   (Variables): [h, w, scale] for input images
+        Return:
+            box_cls_ch_last  (Variables): score for each category, in [N, C, M]
+                C is the number of classes and M is the number of anchor points
+            box_reg_decoding (Variables): decoded bounding box, in [N, M, 4]
+                last dimension is [x1, y1, x2, y2]
+        """
+        act_shape_cls = self.__merge_hw(box_cls)
+        box_cls_ch_last = fluid.layers.reshape(
+            x=box_cls,
+            shape=[self.batch_size, self.num_classes, -1],
+            actual_shape=act_shape_cls)
+        box_cls_ch_last = fluid.layers.sigmoid(box_cls_ch_last)
+        act_shape_reg = self.__merge_hw(box_reg, "channel_last")
+        box_reg_ch_last = fluid.layers.transpose(box_reg, perm=[0, 2, 3, 1])
+        box_reg_ch_last = fluid.layers.reshape(
+            x=box_reg_ch_last,
+            shape=[self.batch_size, -1, 4],
+            actual_shape=act_shape_reg)
+        act_shape_ctn = self.__merge_hw(box_ctn)
+        box_ctn_ch_last = fluid.layers.reshape(
+            x=box_ctn,
+            shape=[self.batch_size, 1, -1],
+            actual_shape=act_shape_ctn)
+        box_ctn_ch_last = fluid.layers.sigmoid(box_ctn_ch_last)
+
+        box_reg_decoding = fluid.layers.stack(
+            [
+                locations[:, 0] - box_reg_ch_last[:, :, 0],
+                locations[:, 1] - box_reg_ch_last[:, :, 1],
+                locations[:, 0] + box_reg_ch_last[:, :, 2],
+                locations[:, 1] + box_reg_ch_last[:, :, 3]
+            ],
+            axis=1)
+        box_reg_decoding = fluid.layers.transpose(
+            box_reg_decoding, perm=[0, 2, 1])
+        # recover the location to original image
+        im_scale = im_info[:, 2]
+        box_reg_decoding = box_reg_decoding / im_scale
+        box_cls_ch_last = box_cls_ch_last * box_ctn_ch_last
+        return box_cls_ch_last, box_reg_decoding
+
+    def _post_processing(self, locations, cls_logits, bboxes_reg, centerness,
+                         im_info):
+        """
+        Args:
+            locations   (list): List of Variables composed by center of each anchor point
+            cls_logits  (list): List of Variables for class prediction
+            bboxes_reg  (list): List of Variables for bounding box prediction
+            centerness  (list): List of Variables for centerness prediction
+            im_info(Variables): [h, w, scale] for input images
+        Return:
+            pred (LoDTensor): predicted bounding box after nms,
+                the shape is n x 6, last dimension is [label, score, xmin, ymin, xmax, ymax]
+        """
+        pred_boxes_ = []
+        pred_scores_ = []
+        for _, (
+                pts, cls, box, ctn
+        ) in enumerate(zip(locations, cls_logits, bboxes_reg, centerness)):
+            pred_scores_lvl, pred_boxes_lvl = self._postprocessing_by_level(
+                pts, cls, box, ctn, im_info)
+            pred_boxes_.append(pred_boxes_lvl)
+            pred_scores_.append(pred_scores_lvl)
+        pred_boxes = fluid.layers.concat(pred_boxes_, axis=1)
+        pred_scores = fluid.layers.concat(pred_scores_, axis=2)
+        pred = self.nms(pred_boxes, pred_scores)
+        return pred
+
+    def get_loss(self, input, tag_labels, tag_bboxes, tag_centerness):
+        """
+        Calculate the loss for FCOS
+        Args:
+            input           (list): List of Variables for feature maps from FPN layers
+            tag_labels     (Variables): category targets for each anchor point
+            tag_bboxes     (Variables): bounding boxes  targets for positive samples
+            tag_centerness (Variables): centerness targets for positive samples
+        Return:
+            loss (dict): loss composed by classification loss, bounding box
+                regression loss and centerness regression loss
+        """
+        cls_logits, bboxes_reg, centerness = self._get_output(
+            input, is_training=True)
+        loss = self.fcos_loss(cls_logits, bboxes_reg, centerness, tag_labels,
+                              tag_bboxes, tag_centerness)
+        return loss
+
+    def get_prediction(self, input, im_info):
+        """
+        Decode the prediction
+        Args:
+            input           (list): List of Variables for feature maps from FPN layers
+            im_info(Variables): [h, w, scale] for input images
+        Return:
+            the bounding box prediction
+        """
+        cls_logits, bboxes_reg, centerness = self._get_output(
+            input, is_training=False)
+        # locations = self._compute_locations(input)
+        # pred = self._post_processing(locations, cls_logits, bboxes_reg,
+        #                              centerness, im_info)
+        # return {"bbox": pred}
+        return cls_logits, bboxes_reg, centerness
 
 

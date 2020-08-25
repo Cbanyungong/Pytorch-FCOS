@@ -15,6 +15,10 @@ import time
 import numpy as np
 import torch
 
+from model.custom_layers import Conv2dUnit
+from model.fcos import FCOS
+from model.head import FCOSHead
+from model.neck import FPN
 from model.resnet import Resnet
 
 import platform
@@ -29,8 +33,23 @@ if sysstr == 'Windows':
 
 
 net = Resnet(50)
+fpn = FPN(256)
+head = FCOSHead()
+# fcos = FCOS()
 
-print(net)
+
+# print(net)
+# print(fpn)
+print(head)
+
+
+
+conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
+
+
+
+print(conv_layer)
+
 
 
 

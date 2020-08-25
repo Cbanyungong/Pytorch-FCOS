@@ -15,14 +15,15 @@ class FCOS(object):
         self.neck = neck
         self.head = head
 
-    def __call__(self, x, cfg, eval):
-        x = self.backbone(x)
-        x = self.neck(x)
+    def __call__(self, x, eval):
+        body_feats = self.backbone(x)
+        body_feats, spatial_scale = self.neck(body_feats)
         if eval:
-            x = self.head(x, cfg.test_cfg, eval)
+            im_info = 1
+            pred = self.head.get_prediction(body_feats, im_info)
         else:
-            x = self.head(x, None, eval)
-        return x
+            pred = None
+        return pred
 
 
 
