@@ -206,7 +206,12 @@ class Decode(object):
         return pimage, im_info
 
     def predict(self, image, im_info, shape):
-        image = torch.Tensor(image)
+        # image = torch.Tensor(image)
+        # im_info = torch.Tensor(im_info)
+        dic2 = np.load('image.npz')
+        img = dic2['img']
+        im_info = dic2['im_info']
+        image = torch.Tensor(img)
         im_info = torch.Tensor(im_info)
         if self.use_gpu:
             image = image.cuda()
