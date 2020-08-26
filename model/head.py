@@ -95,6 +95,18 @@ class FCOSHead(torch.nn.Module):
         self2 = self.cuda(device)
         return self2
 
+    def to_eval(self):
+        n = len(self.fpn_stride)      # 有n个输出层
+        for i in range(n):     # 遍历每个输出层
+            # self.scales_on_reg[i].eval()
+            for lvl in range(0, self.num_convs):
+                self.cls_convs_per_feature[i][lvl].eval()
+                self.reg_convs_per_feature[i][lvl].eval()
+            self.cls_convs_per_feature[i][-1].eval()
+            self.reg_convs_per_feature[i][-1].eval()
+            self.ctn_convs_per_feature[i].eval()
+        self.eval()
+
 
     def _fcos_head(self, features, fpn_stride, i, is_training=False):
         """

@@ -110,6 +110,11 @@ class Resnet(torch.nn.Module):
         self2 = self.cuda(device)
         return self2
 
+    def to_eval(self):
+        for i, ly in enumerate(self.stage4_layers):
+            self.stage4_layers[i].eval()
+        self.eval()
+
     def get_block(self, name):
         stage_id = 0
         if 'stage' in name:

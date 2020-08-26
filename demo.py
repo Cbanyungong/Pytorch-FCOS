@@ -67,7 +67,7 @@ if __name__ == '__main__':
     if use_gpu:
         fcos = fcos.to_cuda()
     fcos.load_state_dict(torch.load(model_path))
-    fcos.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
+    fcos.to_eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
 
     _decode = Decode(conf_thresh, nms_thresh, input_shape, fcos, all_classes, use_gpu)
 
