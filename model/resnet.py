@@ -94,11 +94,9 @@ class Resnet(torch.nn.Module):
         if depth == 50:
             k = 4
         self.stage4_layers = []
-        p = 1
         for i in range(k):
             ly = IdentityBlock(1024, [256, 256, 1024], bn, gn, af, use_dcn=use_dcn)
             self.stage4_layers.append(ly)
-            p += 1
         self.stage4_last_layer = IdentityBlock(1024, [256, 256, 1024], bn, gn, af, use_dcn=use_dcn)
 
         # stage5
@@ -112,6 +110,25 @@ class Resnet(torch.nn.Module):
         self2 = self.cuda(device)
         return self2
 
+    def get_block(self, name):
+        stage_id = 0
+        if 'stage' in name:
+            ids = name[5:]
+            sp = ids.split('_')
+            stage_id = int(sp[0])
+            block_id = int(sp[1])
+        layer = None
+        if stage_id == 4 and block_id > 0:
+            k = 21
+            if self.depth == 50:
+                k = 4
+            if block_id == k + 1:
+                layer = self.stage4_last_layer
+            else:
+                layer = self.stage4_layers[block_id - 1]
+        else:
+            layer = getattr(self, name)
+        return layer
 
     def forward(self, input_tensor):
         x = self.conv1(input_tensor)
