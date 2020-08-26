@@ -123,9 +123,9 @@ class FCOSHead(torch.nn.Module):
 
         # ============= centerness分支，默认是用坐标分支接4个卷积层之后的结果subnet_blob_reg =============
         if self.centerness_on_reg:
-            centerness = self.cls_convs_per_feature[i](subnet_blob_reg)
+            centerness = self.ctn_convs_per_feature[i](subnet_blob_reg)
         else:
-            centerness = self.cls_convs_per_feature[i](subnet_blob_cls)
+            centerness = self.ctn_convs_per_feature[i](subnet_blob_cls)
         return cls_logits, bbox_reg, centerness
 
     def _get_output(self, body_feats, is_training=False):
@@ -316,6 +316,9 @@ class FCOSHead(torch.nn.Module):
         Return:
             the bounding box prediction
         """
+        # cls_logits里面每个元素是[N, 格子行数, 格子列数, 80]
+        # bboxes_reg里面每个元素是[N, 格子行数, 格子列数, 4]
+        # centerness里面每个元素是[N, 格子行数, 格子列数, 1]
         cls_logits, bboxes_reg, centerness = self._get_output(
             input, is_training=False)
         locations = self._compute_locations(input)
