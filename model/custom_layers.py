@@ -95,6 +95,8 @@ class Conv2dUnit(torch.nn.Module):
             x = self.bn(x)
         if self.gn:
             x = self.gn(x)
+        if self.af:
+            x = self.af(x)
         if self.act:
             x = self.act(x)
         return x
