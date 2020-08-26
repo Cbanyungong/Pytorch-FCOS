@@ -208,17 +208,22 @@ class Decode(object):
     def predict(self, image, im_info, shape):
         # image = torch.Tensor(image)
         # im_info = torch.Tensor(im_info)
-        dic2 = np.load('image.npz')
-        img = dic2['img']
-        im_info = dic2['im_info']
-        image = torch.Tensor(img)
-        im_info = torch.Tensor(im_info)
-        if self.use_gpu:
-            image = image.cuda()
-            im_info = im_info.cuda()
-        pred_boxes, pred_scores = self._fcos(image, im_info, eval=True)
-        pred_boxes = pred_boxes.cpu().detach().numpy()    # [N, 所有格子, 4]，最终坐标
-        pred_scores = pred_scores.cpu().detach().numpy()  # [N, 80, 所有格子]，最终分数
+
+        # dic2 = np.load('image.npz')
+        # img = dic2['img']
+        # im_info = dic2['im_info']
+        # image = torch.Tensor(img)
+        # im_info = torch.Tensor(im_info)
+        # if self.use_gpu:
+        #     image = image.cuda()
+        #     im_info = im_info.cuda()
+        # pred_boxes, pred_scores = self._fcos(image, im_info, eval=True)
+        # pred_boxes = pred_boxes.cpu().detach().numpy()    # [N, 所有格子, 4]，最终坐标
+        # pred_scores = pred_scores.cpu().detach().numpy()  # [N, 80, 所有格子]，最终分数
+
+        dic2 = np.load('results.npz')
+        pred_boxes = dic2['aaa00']
+        pred_scores = dic2['aaa01']
 
         # numpy后处理
         boxes, scores, classes = self._fcos_out(pred_boxes[0], pred_scores[0])

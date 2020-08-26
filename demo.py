@@ -48,7 +48,7 @@ if __name__ == '__main__':
 
     # 验证时的分数阈值和nms_iou阈值
     conf_thresh = 0.05
-    conf_thresh = 0.005
+    conf_thresh = 0.2
     nms_thresh = 0.45
 
     # 是否给图片画框。不画可以提速。读图片、后处理还可以继续优化。
@@ -234,12 +234,12 @@ if __name__ == '__main__':
 
     path_dir = os.listdir('images/test')
     # warm up
-    if use_gpu:
-        for k, filename in enumerate(path_dir):
-            image = cv2.imread('images/test/' + filename)
-            image, boxes, scores, classes = _decode.detect_image(image, draw_image=False)
-            if k == 10:
-                break
+    # if use_gpu:
+    #     for k, filename in enumerate(path_dir):
+    #         image = cv2.imread('images/test/' + filename)
+    #         image, boxes, scores, classes = _decode.detect_image(image, draw_image=False)
+    #         if k == 10:
+    #             break
 
 
     time_stat = deque(maxlen=20)
