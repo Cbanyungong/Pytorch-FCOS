@@ -318,10 +318,10 @@ class FCOSHead(torch.nn.Module):
         """
         cls_logits, bboxes_reg, centerness = self._get_output(
             input, is_training=False)
-        # locations = self._compute_locations(input)
-        # pred = self._post_processing(locations, cls_logits, bboxes_reg,
-        #                              centerness, im_info)
-        # return {"bbox": pred}
+        locations = self._compute_locations(input)
+        pred = self._post_processing(locations, cls_logits, bboxes_reg,
+                                     centerness, im_info)
+        return {"bbox": pred}
         return cls_logits, bboxes_reg, centerness
 
 

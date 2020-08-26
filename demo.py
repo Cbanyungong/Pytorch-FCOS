@@ -3,8 +3,8 @@
 # ================================================================
 #
 #   Author      : miemie2013
-#   Created date: 2020-08-19 17:20:11
-#   Description : pytorch_yolov4
+#   Created date: 2020-08-21 19:33:37
+#   Description : pytorch_fcos
 #
 # ================================================================
 from collections import deque
@@ -15,9 +15,12 @@ import time
 import numpy as np
 import torch
 
-from tools.cocotools import get_classes
-from model.yolov4 import YOLOv4
 from model.decode_np import Decode
+from model.fcos import FCOS
+from model.head import FCOSHead
+from model.neck import FPN
+from model.resnet import Resnet
+from tools.cocotools import get_classes
 
 import logging
 FORMAT = '%(asctime)s-%(levelname)s: %(message)s'
@@ -56,14 +59,16 @@ if __name__ == '__main__':
     all_classes = get_classes(classes_path)
     num_classes = len(all_classes)
 
-
-    yolo = YOLOv4(num_classes, num_anchors)
+    resnet = Resnet(50)
+    fpn = FPN()
+    head = FCOSHead()
+    fcos = FCOS(resnet, fpn, head)
     if torch.cuda.is_available():  # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里
-        yolo = yolo.cuda()
-    yolo.load_state_dict(torch.load(model_path))
-    yolo.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
+        fcos = fcos.cuda()
+    # fcos.load_state_dict(torch.load(model_path))
+    fcos.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
 
-    _decode = Decode(conf_thresh, nms_thresh, input_shape, yolo, all_classes)
+    _decode = Decode(conf_thresh, nms_thresh, input_shape, fcos, all_classes)
 
     if not os.path.exists('images/res/'): os.mkdir('images/res/')
 

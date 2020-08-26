@@ -30,7 +30,7 @@ print(torch.__version__)
 if sysstr == 'Windows':
     torch.backends.cudnn.enabled = False
 
-
+max_shape = np.array([[3, 100, 101], [3, 200, 201]]).max(axis=0)
 
 net = Resnet(50)
 fpn = FPN(256)
