@@ -316,9 +316,9 @@ class FCOSHead(torch.nn.Module):
         Return:
             the bounding box prediction
         """
-        # cls_logits里面每个元素是[N, 格子行数, 格子列数, 80]
-        # bboxes_reg里面每个元素是[N, 格子行数, 格子列数, 4]
-        # centerness里面每个元素是[N, 格子行数, 格子列数, 1]
+        # cls_logits里面每个元素是[N, 80, 格子行数, 格子列数]
+        # bboxes_reg里面每个元素是[N,  4, 格子行数, 格子列数]
+        # centerness里面每个元素是[N,  1, 格子行数, 格子列数]
         cls_logits, bboxes_reg, centerness = self._get_output(
             input, is_training=False)
         locations = self._compute_locations(input)
