@@ -15,15 +15,6 @@ from model.custom_layers import Conv2dUnit
 
 
 class FCOSHead(torch.nn.Module):
-    # def __init__(self,
-    #              num_chan=256,
-    #              add_extra_convs=False):
-    #     super(FCOSHead, self).__init__()
-    #     self.aaaaaaaaaaaaaaaaa = num_chan
-    # def forward(self, body_feats, eval=False):
-    #     pred = self.fcos_head.get_prediction(body_feats, im_info)
-    #     reverse_body_feats = body_feats[::-1]   #   [s32, s16, s8]
-    #     num_backbone_stages = len(reverse_body_feats)   # 3
     def __init__(self,
                  num_classes=80,
                  fpn_stride=[8, 16, 32, 64, 128],
@@ -32,8 +23,8 @@ class FCOSHead(torch.nn.Module):
                  batch_size=1,
                  norm_type="gn",
                  fcos_loss=None,
-                 norm_reg_targets=False,
-                 centerness_on_reg=False,
+                 norm_reg_targets=True,
+                 centerness_on_reg=True,
                  use_dcn_in_tower=False
                  # nms=MultiClassNMS(
                  #     score_threshold=0.01,
@@ -89,6 +80,20 @@ class FCOSHead(torch.nn.Module):
             self.ctn_convs_per_feature.append(ctn_last_conv_layer)
 
         self.relu = torch.nn.ReLU()
+
+
+    def to_cuda(self, device=None):
+        n = len(self.fpn_stride)      # 有n个输出层
+        for i in range(n):     # 遍历每个输出层
+            self.scales_on_reg[i] = self.scales_on_reg[i].cuda(device)
+            for lvl in range(0, self.num_convs):
+                self.cls_convs_per_feature[i][lvl] = self.cls_convs_per_feature[i][lvl].cuda(device)
+                self.reg_convs_per_feature[i][lvl] = self.reg_convs_per_feature[i][lvl].cuda(device)
+            self.cls_convs_per_feature[i][-1] = self.cls_convs_per_feature[i][-1].cuda(device)
+            self.reg_convs_per_feature[i][-1] = self.reg_convs_per_feature[i][-1].cuda(device)
+            self.ctn_convs_per_feature[i] = self.ctn_convs_per_feature[i].cuda(device)
+        self2 = self.cuda(device)
+        return self2
 
 
     def _fcos_head(self, features, fpn_stride, i, is_training=False):
@@ -167,8 +172,8 @@ class FCOSHead(torch.nn.Module):
             h = shape_fm[2]
             w = shape_fm[3]
             fpn_stride = self.fpn_stride[lvl]
-            shift_x = torch.arange(0, w, dtype=torch.float32) * fpn_stride   # 生成x偏移 [0, 1*fpn_stride, 2*fpn_stride, ...]
-            shift_y = torch.arange(0, h, dtype=torch.float32) * fpn_stride   # 生成y偏移 [0, 1*fpn_stride, 2*fpn_stride, ...]
+            shift_x = torch.arange(0, w, dtype=torch.float32, device=feature.device) * fpn_stride   # 生成x偏移 [0, 1*fpn_stride, 2*fpn_stride, ...]
+            shift_y = torch.arange(0, h, dtype=torch.float32, device=feature.device) * fpn_stride   # 生成y偏移 [0, 1*fpn_stride, 2*fpn_stride, ...]
             shift_x = shift_x.unsqueeze(0)   # [1, w]
             shift_y = shift_y.unsqueeze(1)   # [h, 1]
             shift_x = shift_x.repeat((h, 1))   # [h, w]

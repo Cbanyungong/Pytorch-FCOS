@@ -106,6 +106,12 @@ class Resnet(torch.nn.Module):
         self.stage5_1 = IdentityBlock(2048, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn)
         self.stage5_2 = IdentityBlock(2048, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn)
 
+    def to_cuda(self, device=None):
+        for i, ly in enumerate(self.stage4_layers):
+            self.stage4_layers[i] = self.stage4_layers[i].cuda(device)
+        self2 = self.cuda(device)
+        return self2
+
 
     def forward(self, input_tensor):
         x = self.conv1(input_tensor)
