@@ -7,19 +7,19 @@
 #   Description : pytorch_fcos
 #
 # ================================================================
+import torch
 
-class FCOS(object):
+class FCOS(torch.nn.Module):
     def __init__(self, backbone, neck, head):
         super(FCOS, self).__init__()
         self.backbone = backbone
         self.neck = neck
         self.head = head
 
-    def __call__(self, x, eval):
+    def forward(self, x, im_info, eval):
         body_feats = self.backbone(x)
         body_feats, spatial_scale = self.neck(body_feats)
         if eval:
-            im_info = 1
             pred = self.head.get_prediction(body_feats, im_info)
         else:
             pred = None

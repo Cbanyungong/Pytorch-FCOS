@@ -19,9 +19,9 @@ class Decode(object):
 
     # 处理一张图片
     def detect_image(self, image, draw_image):
-        pimage = self.process_image(np.copy(image))
+        pimage, im_info = self.process_image(np.copy(image))
 
-        boxes, scores, classes = self.predict(pimage, image.shape)
+        boxes, scores, classes = self.predict(pimage, im_info, image.shape)
         if boxes is not None and draw_image:
             self.draw(image, boxes, scores, classes)
         return image, boxes, scores, classes
@@ -184,6 +184,7 @@ class Decode(object):
         im = im.transpose(2, 0, 1)
 
         # PadBatch
+        use_padded_im_info = True
         coarsest_stride = 128
         max_shape = np.array([im.shape]).max(axis=0)
         if coarsest_stride > 0:
@@ -196,21 +197,22 @@ class Decode(object):
         padding_im = np.zeros(
             (im_c, max_shape[1], max_shape[2]), dtype=np.float32)
         padding_im[:, :im_h, :im_w] = im
+        if use_padded_im_info:
+            im_info[:2] = max_shape[1:3]
 
         pimage = np.expand_dims(padding_im, axis=0)
-        return pimage
+        im_info = np.expand_dims(im_info, axis=0)
+        return pimage, im_info
 
-    def predict(self, image, shape):
-        image = image.transpose(0, 3, 1, 2)
+    def predict(self, image, im_info, shape):
         image = torch.Tensor(image)
-        outs = self._fcos(image)
-        outs = [o.cpu().detach().numpy() for o in outs]
+        im_info = torch.Tensor(im_info)
+        pred_boxes, pred_scores = self._fcos(image, im_info, eval=True)
+        pred_boxes = pred_boxes.cpu().detach().numpy()    # [N, 所有格子, 4]，最终坐标
+        pred_scores = pred_scores.cpu().detach().numpy()  # [N, 80, 所有格子]，最终分数
 
         # numpy后处理
-        a1 = np.reshape(outs[0], (1, self.input_shape[0]//32, self.input_shape[1]//32, 3, 5+self.num_classes))
-        a2 = np.reshape(outs[1], (1, self.input_shape[0]//16, self.input_shape[1]//16, 3, 5+self.num_classes))
-        a3 = np.reshape(outs[2], (1, self.input_shape[0]//8, self.input_shape[1]//8, 3, 5+self.num_classes))
-        boxes, scores, classes = self._fcos_out([a1, a2, a3], shape)
+        boxes, scores, classes = self._fcos_out(pred_boxes, pred_scores)
 
         return boxes, scores, classes
 

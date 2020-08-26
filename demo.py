@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # 6G的卡，训练时如果要预测，则设置use_gpu = False，否则显存不足。
 use_gpu = False
-use_gpu = True
+# use_gpu = True
 
 
 if __name__ == '__main__':
@@ -63,7 +63,7 @@ if __name__ == '__main__':
     fpn = FPN()
     head = FCOSHead()
     fcos = FCOS(resnet, fpn, head)
-    if torch.cuda.is_available():  # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里
+    if use_gpu:
         fcos = fcos.cuda()
     # fcos.load_state_dict(torch.load(model_path))
     fcos.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.

@@ -29,6 +29,7 @@ class FCOSHead(torch.nn.Module):
                  fpn_stride=[8, 16, 32, 64, 128],
                  prior_prob=0.01,
                  num_convs=4,
+                 batch_size=1,
                  norm_type="gn",
                  fcos_loss=None,
                  norm_reg_targets=False,
@@ -51,7 +52,7 @@ class FCOSHead(torch.nn.Module):
         self.use_dcn_in_tower = use_dcn_in_tower
         self.norm_type = norm_type
         self.fcos_loss = fcos_loss
-        self.batch_size = 8
+        self.batch_size = batch_size
         # self.nms = nms
         # if isinstance(nms, dict):
         #     self.nms = MultiClassNMS(**nms)
@@ -246,10 +247,10 @@ class FCOSHead(torch.nn.Module):
         ) in enumerate(zip(locations, cls_logits, bboxes_reg, centerness)):
             pred_scores_lvl, pred_boxes_lvl = self._postprocessing_by_level(
                 pts, cls, box, ctn, im_info)
-            pred_boxes_.append(pred_boxes_lvl)
-            pred_scores_.append(pred_scores_lvl)
-        pred_boxes = torch.cat(pred_boxes_, dim=1)
-        pred_scores = torch.cat(pred_scores_, dim=2)
+            pred_boxes_.append(pred_boxes_lvl)     # [N, H*W, 4]，最终坐标
+            pred_scores_.append(pred_scores_lvl)   # [N, 80, H*W]，最终分数
+        pred_boxes = torch.cat(pred_boxes_, dim=1)    # [N, 所有格子, 4]，最终坐标
+        pred_scores = torch.cat(pred_scores_, dim=2)  # [N, 80, 所有格子]，最终分数
         # pred = self.nms(pred_boxes, pred_scores)
         # return pred
         return pred_boxes, pred_scores
