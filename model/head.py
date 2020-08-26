@@ -161,56 +161,23 @@ class FCOSHead(torch.nn.Module):
             Anchor points for each feature map pixel
         """
         locations = []
-        for lvl, fpn_name in enumerate(features):
-            feature = features[fpn_name]
-            shape_fm = fluid.layers.shape(feature)
-            shape_fm.stop_gradient = True
+        for lvl, feature in enumerate(features):
+            shape_fm = feature.size()
             h = shape_fm[2]
             w = shape_fm[3]
             fpn_stride = self.fpn_stride[lvl]
-            shift_x = fluid.layers.range(
-                0, w * fpn_stride, fpn_stride, dtype='float32')
-            shift_y = fluid.layers.range(
-                0, h * fpn_stride, fpn_stride, dtype='float32')
-            shift_x = fluid.layers.unsqueeze(shift_x, axes=[0])
-            shift_y = fluid.layers.unsqueeze(shift_y, axes=[1])
-            shift_x = fluid.layers.expand_as(
-                shift_x, target_tensor=feature[0, 0, :, :])
-            shift_y = fluid.layers.expand_as(
-                shift_y, target_tensor=feature[0, 0, :, :])
-            shift_x.stop_gradient = True
-            shift_y.stop_gradient = True
-            shift_x = fluid.layers.reshape(shift_x, shape=[-1])
-            shift_y = fluid.layers.reshape(shift_y, shape=[-1])
-            location = fluid.layers.stack(
-                [shift_x, shift_y], axis=-1) + fpn_stride // 2
-            location.stop_gradient = True
+            shift_x = torch.arange(0, w, dtype=torch.float32) * fpn_stride   # 生成x偏移 [0, 1*fpn_stride, 2*fpn_stride, ...]
+            shift_y = torch.arange(0, h, dtype=torch.float32) * fpn_stride   # 生成y偏移 [0, 1*fpn_stride, 2*fpn_stride, ...]
+            shift_x = shift_x.unsqueeze(0)   # [1, w]
+            shift_y = shift_y.unsqueeze(1)   # [h, 1]
+            shift_x = shift_x.repeat((h, 1))   # [h, w]
+            shift_y = shift_y.repeat((1, w))   # [h, w]
+            shift_x = shift_x.reshape((h * w, 1))   # [h*w, 1]
+            shift_y = shift_y.reshape((h * w, 1))   # [h*w, 1]
+            location = torch.cat([shift_x, shift_y], dim=-1)   # [h*w, 2]  格子左上角的坐标，单位是1像素。顺序是先第一行格子从左到右，再到第二行格子从左到右，...
+            location += fpn_stride // 2                        # [h*w, 2]  格子中心点的坐标，单位是1像素。顺序是先第一行格子从左到右，再到第二行格子从左到右，...
             locations.append(location)
         return locations
-
-    def __merge_hw(self, input, ch_type="channel_first"):
-        """
-        Args:
-            input (Variables): Feature map whose H and W will be merged into one dimension
-            ch_type     (str): channel_first / channel_last
-        Return:
-            new_shape (Variables): The new shape after h and w merged into one dimension
-        """
-        shape_ = fluid.layers.shape(input)
-        bs = shape_[0]
-        ch = shape_[1]
-        hi = shape_[2]
-        wi = shape_[3]
-        img_size = hi * wi
-        img_size.stop_gradient = True
-        if ch_type == "channel_first":
-            new_shape = fluid.layers.concat([bs, ch, img_size])
-        elif ch_type == "channel_last":
-            new_shape = fluid.layers.concat([bs, img_size, ch])
-        else:
-            raise KeyError("Wrong ch_type %s" % ch_type)
-        new_shape.stop_gradient = True
-        return new_shape
 
     def _postprocessing_by_level(self, locations, box_cls, box_reg, box_ctn,
                                  im_info):
@@ -227,39 +194,36 @@ class FCOSHead(torch.nn.Module):
             box_reg_decoding (Variables): decoded bounding box, in [N, M, 4]
                 last dimension is [x1, y1, x2, y2]
         """
-        act_shape_cls = self.__merge_hw(box_cls)
-        box_cls_ch_last = fluid.layers.reshape(
-            x=box_cls,
-            shape=[self.batch_size, self.num_classes, -1],
-            actual_shape=act_shape_cls)
-        box_cls_ch_last = fluid.layers.sigmoid(box_cls_ch_last)
-        act_shape_reg = self.__merge_hw(box_reg, "channel_last")
-        box_reg_ch_last = fluid.layers.transpose(box_reg, perm=[0, 2, 3, 1])
-        box_reg_ch_last = fluid.layers.reshape(
-            x=box_reg_ch_last,
-            shape=[self.batch_size, -1, 4],
-            actual_shape=act_shape_reg)
-        act_shape_ctn = self.__merge_hw(box_ctn)
-        box_ctn_ch_last = fluid.layers.reshape(
-            x=box_ctn,
-            shape=[self.batch_size, 1, -1],
-            actual_shape=act_shape_ctn)
-        box_ctn_ch_last = fluid.layers.sigmoid(box_ctn_ch_last)
+        batch_size = self.batch_size
+        num_classes = self.num_classes
 
-        box_reg_decoding = fluid.layers.stack(
+        # =========== 类别概率，[N, 80, H*W] ===========
+        box_cls_ch_last = box_cls.reshape(
+            (batch_size, num_classes, box_cls.size()[2] * box_cls.size()[3]))  # [N, 80, H*W]
+        box_cls_ch_last = torch.sigmoid(box_cls_ch_last)  # 类别概率用sigmoid()激活，[N, 80, H*W]
+
+        # =========== 坐标(4个偏移)，[N, H*W, 4] ===========
+        box_reg_ch_last = box_reg.permute(0, 2, 3, 1)  # [N, H, W, 4]
+        box_reg_ch_last = box_reg_ch_last.reshape(
+            (batch_size, box_reg_ch_last.size()[1] * box_reg_ch_last.size()[2], 4))  # [N, H*W, 4]，坐标不用再接激活层，直接预测。
+
+        # =========== centerness，[N, 1, H*W] ===========
+        box_ctn_ch_last = box_ctn.reshape((batch_size, 1, box_ctn.size()[2] * box_ctn.size()[3]))  # [N, 1, H*W]
+        box_ctn_ch_last = torch.sigmoid(box_ctn_ch_last)  # centerness用sigmoid()激活，[N, 1, H*W]
+
+        box_reg_decoding = torch.cat(  # [N, H*W, 4]
             [
-                locations[:, 0] - box_reg_ch_last[:, :, 0],
-                locations[:, 1] - box_reg_ch_last[:, :, 1],
-                locations[:, 0] + box_reg_ch_last[:, :, 2],
-                locations[:, 1] + box_reg_ch_last[:, :, 3]
+                locations[:, 0:1] - box_reg_ch_last[:, :, 0:1],  # 左上角x坐标
+                locations[:, 1:2] - box_reg_ch_last[:, :, 1:2],  # 左上角y坐标
+                locations[:, 0:1] + box_reg_ch_last[:, :, 2:3],  # 右下角x坐标
+                locations[:, 1:2] + box_reg_ch_last[:, :, 3:4]  # 右下角y坐标
             ],
-            axis=1)
-        box_reg_decoding = fluid.layers.transpose(
-            box_reg_decoding, perm=[0, 2, 1])
-        # recover the location to original image
-        im_scale = im_info[:, 2]
-        box_reg_decoding = box_reg_decoding / im_scale
-        box_cls_ch_last = box_cls_ch_last * box_ctn_ch_last
+            dim=-1)
+        # # recover the location to original image
+        im_scale = im_info[:, 2]  # [N, ]
+        im_scale = im_scale[:, np.newaxis, np.newaxis]  # [N, 1, 1]
+        box_reg_decoding = box_reg_decoding / im_scale  # [N, H*W, 4]，最终坐标=坐标*图片缩放因子
+        box_cls_ch_last = box_cls_ch_last * box_ctn_ch_last  # [N, 80, H*W]，最终分数=类别概率*centerness
         return box_cls_ch_last, box_reg_decoding
 
     def _post_processing(self, locations, cls_logits, bboxes_reg, centerness,
@@ -284,10 +248,11 @@ class FCOSHead(torch.nn.Module):
                 pts, cls, box, ctn, im_info)
             pred_boxes_.append(pred_boxes_lvl)
             pred_scores_.append(pred_scores_lvl)
-        pred_boxes = fluid.layers.concat(pred_boxes_, axis=1)
-        pred_scores = fluid.layers.concat(pred_scores_, axis=2)
-        pred = self.nms(pred_boxes, pred_scores)
-        return pred
+        pred_boxes = torch.cat(pred_boxes_, dim=1)
+        pred_scores = torch.cat(pred_scores_, dim=2)
+        # pred = self.nms(pred_boxes, pred_scores)
+        # return pred
+        return pred_boxes, pred_scores
 
     def get_loss(self, input, tag_labels, tag_bboxes, tag_centerness):
         """
@@ -311,7 +276,7 @@ class FCOSHead(torch.nn.Module):
         """
         Decode the prediction
         Args:
-            input           (list): List of Variables for feature maps from FPN layers
+            input: [c7, c6, c5, c4, c3]
             im_info(Variables): [h, w, scale] for input images
         Return:
             the bounding box prediction
@@ -324,7 +289,7 @@ class FCOSHead(torch.nn.Module):
         locations = self._compute_locations(input)
         pred = self._post_processing(locations, cls_logits, bboxes_reg,
                                      centerness, im_info)
-        return {"bbox": pred}
-        return cls_logits, bboxes_reg, centerness
+        # return {"bbox": pred}
+        return pred
 
 
