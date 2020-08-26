@@ -212,62 +212,15 @@ class Decode(object):
         pred_scores = pred_scores.cpu().detach().numpy()  # [N, 80, 所有格子]，最终分数
 
         # numpy后处理
-        boxes, scores, classes = self._fcos_out(pred_boxes, pred_scores)
+        boxes, scores, classes = self._fcos_out(pred_boxes[0], pred_scores[0])
 
         return boxes, scores, classes
-
-
-    def _sigmoid(self, x):
-        return 1 / (1 + np.exp(-x))
-
-    def _process_feats(self, out, anchors, mask):
-        grid_h, grid_w, num_boxes = map(int, out.shape[1: 4])
-
-        anchors = [anchors[i] for i in mask]
-        anchors_tensor = np.array(anchors).reshape(1, 1, len(anchors), 2)
-
-        # Reshape to batch, height, width, num_anchors, box_params.
-        out = out[0]
-        box_xy = self._sigmoid(out[..., :2])
-        box_wh = np.exp(out[..., 2:4])
-        box_wh = box_wh * anchors_tensor
-
-        box_confidence = self._sigmoid(out[..., 4])
-        box_confidence = np.expand_dims(box_confidence, axis=-1)
-        box_class_probs = self._sigmoid(out[..., 5:])
-
-        col = np.tile(np.arange(0, grid_w), grid_w).reshape(-1, grid_w)
-        row = np.tile(np.arange(0, grid_h).reshape(-1, 1), grid_h)
-
-        col = col.reshape(grid_h, grid_w, 1, 1).repeat(3, axis=-2)
-        row = row.reshape(grid_h, grid_w, 1, 1).repeat(3, axis=-2)
-        grid = np.concatenate((col, row), axis=-1)
-
-        box_xy += grid
-        box_xy /= (grid_w, grid_h)
-        box_wh /= self.input_shape
-        box_xy -= (box_wh / 2.)   # 坐标格式是左上角xy加矩形宽高wh，xywh都除以图片边长归一化了。
-        boxes = np.concatenate((box_xy, box_wh), axis=-1)
-
-        return boxes, box_confidence, box_class_probs
-
-    def _filter_boxes(self, boxes, box_confidences, box_class_probs):
-        box_scores = box_confidences * box_class_probs
-        box_classes = np.argmax(box_scores, axis=-1)
-        box_class_scores = np.max(box_scores, axis=-1)
-        pos = np.where(box_class_scores >= self._t1)
-
-        boxes = boxes[pos]
-        classes = box_classes[pos]
-        scores = box_class_scores[pos]
-
-        return boxes, classes, scores
 
     def _nms_boxes(self, boxes, scores):
         x = boxes[:, 0]
         y = boxes[:, 1]
-        w = boxes[:, 2]
-        h = boxes[:, 3]
+        w = boxes[:, 2] - x
+        h = boxes[:, 3] - y
 
         areas = w * h
         order = scores.argsort()[::-1]
@@ -295,29 +248,21 @@ class Decode(object):
         return keep
 
 
-    def _fcos_out(self, outs, shape):
-        masks = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
-        anchors = [[12, 16], [19, 36], [40, 28], [36, 75], [76, 55],
-                   [72, 146], [142, 110], [192, 243], [459, 401]]
+    def _fcos_out(self, pred_boxes, pred_scores):
+        '''
+        :param pred_boxes:   [所有格子, 4]，最终坐标
+        :param pred_scores:  [80, 所有格子]，最终分数
+        :return:
+        '''
+        # 分数过滤
+        box_classes = np.argmax(pred_scores, axis=0)
+        box_class_scores = np.max(pred_scores, axis=0)
+        pos = np.where(box_class_scores >= self._t1)
 
-        boxes, classes, scores = [], [], []
+        boxes = pred_boxes[pos]         # [M, 4]
+        classes = box_classes[pos]      # [M, ]
+        scores = box_class_scores[pos]  # [M, ]
 
-        for out, mask in zip(outs, masks):
-            b, c, s = self._process_feats(out, anchors, mask)
-            b, c, s = self._filter_boxes(b, c, s)
-            boxes.append(b)
-            classes.append(c)
-            scores.append(s)
-
-        boxes = np.concatenate(boxes)
-        classes = np.concatenate(classes)
-        scores = np.concatenate(scores)
-
-        # boxes坐标格式是左上角xy加矩形宽高wh，xywh都除以图片边长归一化了。
-        # Scale boxes back to original image shape.
-        w, h = shape[1], shape[0]
-        image_dims = [w, h, w, h]
-        boxes = boxes * image_dims
 
         nboxes, nclasses, nscores = [], [], []
         for c in set(classes):
@@ -338,9 +283,6 @@ class Decode(object):
         boxes = np.concatenate(nboxes)
         classes = np.concatenate(nclasses)
         scores = np.concatenate(nscores)
-
-        # 换坐标
-        boxes[:, [2, 3]] = boxes[:, [0, 1]] + boxes[:, [2, 3]]
 
         return boxes, scores, classes
 
