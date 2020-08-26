@@ -37,8 +37,8 @@ use_gpu = True
 if __name__ == '__main__':
     # classes_path = 'data/voc_classes.txt'
     classes_path = 'data/coco_classes.txt'
-    # model_path可以是'pytorch_yolov4.pt'、'./weights/step00001000.pt'这些。
-    model_path = 'pytorch_yolov4.pt'
+    # model_path可以是'fcos_r50_fpn_multiscale_2x.pt'、'./weights/step00001000.pt'这些。
+    model_path = 'fcos_r50_fpn_multiscale_2x.pt'
     # model_path = './weights/step00001000.pt'
 
     # input_shape越大，精度会上升，但速度会下降。
@@ -48,6 +48,7 @@ if __name__ == '__main__':
 
     # 验证时的分数阈值和nms_iou阈值
     conf_thresh = 0.05
+    conf_thresh = 0.5
     nms_thresh = 0.45
 
     # 是否给图片画框。不画可以提速。读图片、后处理还可以继续优化。
@@ -65,7 +66,7 @@ if __name__ == '__main__':
     fcos = FCOS(resnet, fpn, head)
     if use_gpu:
         fcos = fcos.to_cuda()
-    # fcos.load_state_dict(torch.load(model_path))
+    fcos.load_state_dict(torch.load(model_path))
     fcos.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
 
     _decode = Decode(conf_thresh, nms_thresh, input_shape, fcos, all_classes, use_gpu)

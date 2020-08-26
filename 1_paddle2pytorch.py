@@ -33,6 +33,17 @@ def copy_conv_af(conv_unit, w, scale, offset):
     af.weight.data = torch.Tensor(scale)
     af.bias.data = torch.Tensor(offset)
 
+def copy_conv(conv_unit, w, b):
+    conv = conv_unit.conv
+    conv.weight.data = torch.Tensor(w)
+    conv.bias.data = torch.Tensor(b)
+
+def copy_conv_gn(conv_unit, w, b, scale, offset):
+    conv, gn = conv_unit.conv, conv_unit.gn
+    conv.weight.data = torch.Tensor(w)
+    conv.bias.data = torch.Tensor(b)
+    gn.weight.data = torch.Tensor(scale)
+    gn.bias.data = torch.Tensor(offset)
 
 dic = np.load('fcos_r50_fpn_multiscale_2x.npz')
 
@@ -85,46 +96,38 @@ for nid, num in enumerate(nums):
             offset = dic[shortcut_bn_name + '_offset']
             copy_conv_af(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv4, w, scale, offset)
 # fpn, 8个卷积层
-'''
-fpn_inner_res5_sum_w = np.array(fluid.global_scope().find_var('fpn_inner_res5_sum_w').get_tensor())
-fpn_inner_res5_sum_b = np.array(fluid.global_scope().find_var('fpn_inner_res5_sum_b').get_tensor())
-dic['fpn_inner_res5_sum_w'] = fpn_inner_res5_sum_w
-dic['fpn_inner_res5_sum_b'] = fpn_inner_res5_sum_b
+w = dic['fpn_inner_res5_sum_w']
+b = dic['fpn_inner_res5_sum_b']
+copy_conv(fpn.s32_conv, w, b)
 
-fpn_inner_res4_sum_lateral_w = np.array(fluid.global_scope().find_var('fpn_inner_res4_sum_lateral_w').get_tensor())
-fpn_inner_res4_sum_lateral_b = np.array(fluid.global_scope().find_var('fpn_inner_res4_sum_lateral_b').get_tensor())
-dic['fpn_inner_res4_sum_lateral_w'] = fpn_inner_res4_sum_lateral_w
-dic['fpn_inner_res4_sum_lateral_b'] = fpn_inner_res4_sum_lateral_b
+w = dic['fpn_inner_res4_sum_lateral_w']
+b = dic['fpn_inner_res4_sum_lateral_b']
+copy_conv(fpn.s16_conv, w, b)
 
-fpn_inner_res3_sum_lateral_w = np.array(fluid.global_scope().find_var('fpn_inner_res3_sum_lateral_w').get_tensor())
-fpn_inner_res3_sum_lateral_b = np.array(fluid.global_scope().find_var('fpn_inner_res3_sum_lateral_b').get_tensor())
-dic['fpn_inner_res3_sum_lateral_w'] = fpn_inner_res3_sum_lateral_w
-dic['fpn_inner_res3_sum_lateral_b'] = fpn_inner_res3_sum_lateral_b
+w = dic['fpn_inner_res3_sum_lateral_w']
+b = dic['fpn_inner_res3_sum_lateral_b']
+copy_conv(fpn.s8_conv, w, b)
 
-fpn_res5_sum_w = np.array(fluid.global_scope().find_var('fpn_res5_sum_w').get_tensor())
-fpn_res5_sum_b = np.array(fluid.global_scope().find_var('fpn_res5_sum_b').get_tensor())
-dic['fpn_res5_sum_w'] = fpn_res5_sum_w
-dic['fpn_res5_sum_b'] = fpn_res5_sum_b
+w = dic['fpn_res5_sum_w']
+b = dic['fpn_res5_sum_b']
+copy_conv(fpn.sc_s32_conv, w, b)
 
-fpn_res4_sum_w = np.array(fluid.global_scope().find_var('fpn_res4_sum_w').get_tensor())
-fpn_res4_sum_b = np.array(fluid.global_scope().find_var('fpn_res4_sum_b').get_tensor())
-dic['fpn_res4_sum_w'] = fpn_res4_sum_w
-dic['fpn_res4_sum_b'] = fpn_res4_sum_b
+w = dic['fpn_res4_sum_w']
+b = dic['fpn_res4_sum_b']
+copy_conv(fpn.sc_s16_conv, w, b)
 
-fpn_res3_sum_w = np.array(fluid.global_scope().find_var('fpn_res3_sum_w').get_tensor())
-fpn_res3_sum_b = np.array(fluid.global_scope().find_var('fpn_res3_sum_b').get_tensor())
-dic['fpn_res3_sum_w'] = fpn_res3_sum_w
-dic['fpn_res3_sum_b'] = fpn_res3_sum_b
+w = dic['fpn_res3_sum_w']
+b = dic['fpn_res3_sum_b']
+copy_conv(fpn.sc_s8_conv, w, b)
 
-fpn_6_w = np.array(fluid.global_scope().find_var('fpn_6_w').get_tensor())
-fpn_6_b = np.array(fluid.global_scope().find_var('fpn_6_b').get_tensor())
-dic['fpn_6_w'] = fpn_6_w
-dic['fpn_6_b'] = fpn_6_b
+w = dic['fpn_6_w']
+b = dic['fpn_6_b']
+copy_conv(fpn.c6_conv, w, b)
 
-fpn_7_w = np.array(fluid.global_scope().find_var('fpn_7_w').get_tensor())
-fpn_7_b = np.array(fluid.global_scope().find_var('fpn_7_b').get_tensor())
-dic['fpn_7_w'] = fpn_7_w
-dic['fpn_7_b'] = fpn_7_b
+w = dic['fpn_7_w']
+b = dic['fpn_7_b']
+copy_conv(fpn.c7_conv, w, b)
+
 
 # head
 n = 5  # 有n个输出层
@@ -133,55 +136,48 @@ for i in range(n):  # 遍历每个输出层
     for lvl in range(0, num_convs):
         # conv + gn
         conv_cls_name = 'fcos_head_cls_tower_conv_{}'.format(lvl)
-        weight_para = np.array(fluid.global_scope().find_var(conv_cls_name + "_weights").get_tensor())
-        bias_para = np.array(fluid.global_scope().find_var(conv_cls_name + "_bias").get_tensor())
         norm_name = conv_cls_name + "_norm"
-        _scale = np.array(fluid.global_scope().find_var(norm_name + "_scale").get_tensor())
-        _offset = np.array(fluid.global_scope().find_var(norm_name + "_offset").get_tensor())
-        dic[conv_cls_name + "_weights"] = weight_para
-        dic[conv_cls_name + "_bias"] = bias_para
-        dic[norm_name + "_scale"] = _scale
-        dic[norm_name + "_offset"] = _offset
+        w = dic[conv_cls_name + "_weights"]
+        b = dic[conv_cls_name + "_bias"]
+        scale = dic[norm_name + "_scale"]
+        offset = dic[norm_name + "_offset"]
+        copy_conv_gn(head.cls_convs_per_feature[i][lvl], w, b, scale, offset)
+
 
         # conv + gn
         conv_reg_name = 'fcos_head_reg_tower_conv_{}'.format(lvl)
-        weight_para = np.array(fluid.global_scope().find_var(conv_reg_name + "_weights").get_tensor())
-        bias_para = np.array(fluid.global_scope().find_var(conv_reg_name + "_bias").get_tensor())
         norm_name = conv_reg_name + "_norm"
-        _scale = np.array(fluid.global_scope().find_var(norm_name + "_scale").get_tensor())
-        _offset = np.array(fluid.global_scope().find_var(norm_name + "_offset").get_tensor())
-        dic[conv_reg_name + "_weights"] = weight_para
-        dic[conv_reg_name + "_bias"] = bias_para
-        dic[norm_name + "_scale"] = _scale
-        dic[norm_name + "_offset"] = _offset
+        w = dic[conv_reg_name + "_weights"]
+        b = dic[conv_reg_name + "_bias"]
+        scale = dic[norm_name + "_scale"]
+        offset = dic[norm_name + "_offset"]
+        copy_conv_gn(head.reg_convs_per_feature[i][lvl], w, b, scale, offset)
 
     # 类别分支最后的conv
     conv_cls_name = "fcos_head_cls"
-    weight_para = np.array(fluid.global_scope().find_var(conv_cls_name + "_weights").get_tensor())
-    bias_para = np.array(fluid.global_scope().find_var(conv_cls_name + "_bias").get_tensor())
-    dic[conv_cls_name + "_weights"] = weight_para
-    dic[conv_cls_name + "_bias"] = bias_para
+    w = dic[conv_cls_name + "_weights"]
+    b = dic[conv_cls_name + "_bias"]
+    copy_conv(head.cls_convs_per_feature[i][-1], w, b)
 
     # 坐标分支最后的conv
     conv_reg_name = "fcos_head_reg"
-    weight_para = np.array(fluid.global_scope().find_var(conv_reg_name + "_weights").get_tensor())
-    bias_para = np.array(fluid.global_scope().find_var(conv_reg_name + "_bias").get_tensor())
-    dic[conv_reg_name + "_weights"] = weight_para
-    dic[conv_reg_name + "_bias"] = bias_para
+    w = dic[conv_reg_name + "_weights"]
+    b = dic[conv_reg_name + "_bias"]
+    copy_conv(head.reg_convs_per_feature[i][-1], w, b)
 
     # centerness分支最后的conv
     conv_centerness_name = "fcos_head_centerness"
-    weight_para = np.array(fluid.global_scope().find_var(conv_centerness_name + "_weights").get_tensor())
-    bias_para = np.array(fluid.global_scope().find_var(conv_centerness_name + "_bias").get_tensor())
-    dic[conv_centerness_name + "_weights"] = weight_para
-    dic[conv_centerness_name + "_bias"] = bias_para
+    w = dic[conv_centerness_name + "_weights"]
+    b = dic[conv_centerness_name + "_bias"]
+    copy_conv(head.ctn_convs_per_feature[i], w, b)
 
 # 5个scale
 fpn_names = ['fpn_7', 'fpn_6', 'fpn_res5_sum', 'fpn_res4_sum', 'fpn_res3_sum']
+i = 0
 for fpn_name in fpn_names:
-    scale_i = np.array(fluid.global_scope().find_var("%s_scale_on_reg" % fpn_name).get_tensor())
-    dic["%s_scale_on_reg" % fpn_name] = scale_i
-'''
+    scale_i = dic["%s_scale_on_reg" % fpn_name]
+    head.scales_on_reg[i].data = torch.Tensor(scale_i)
+    i += 1
 
 
 
