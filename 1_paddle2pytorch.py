@@ -122,11 +122,11 @@ copy_conv(fpn.sc_s8_conv, w, b)
 
 w = dic['fpn_6_w']
 b = dic['fpn_6_b']
-copy_conv(fpn.c6_conv, w, b)
+copy_conv(fpn.p6_conv, w, b)
 
 w = dic['fpn_7_w']
 b = dic['fpn_7_b']
-copy_conv(fpn.c7_conv, w, b)
+copy_conv(fpn.p7_conv, w, b)
 
 
 # head

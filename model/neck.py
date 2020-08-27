@@ -37,9 +37,9 @@ class FPN(torch.nn.Module):
         self.sc_s8_conv = Conv2dUnit(num_chan, num_chan, 3, stride=1, bias_attr=True, act=None)
         self.second_convs = [self.sc_s32_conv, self.sc_s16_conv, self.sc_s8_conv]
 
-        # c6c7
-        self.c6_conv = Conv2dUnit(num_chan, num_chan, 3, stride=2, bias_attr=True, act=None)
-        self.c7_conv = Conv2dUnit(num_chan, num_chan, 3, stride=2, bias_attr=True, act=None)
+        # p6p7
+        self.p6_conv = Conv2dUnit(num_chan, num_chan, 3, stride=2, bias_attr=True, act=None)
+        self.p7_conv = Conv2dUnit(num_chan, num_chan, 3, stride=2, bias_attr=True, act=None)
 
         self.upsample = torch.nn.Upsample(scale_factor=2, mode='nearest')
 
@@ -74,12 +74,12 @@ class FPN(torch.nn.Module):
             fpn_output = self.second_convs[i](fpn_input)   # fpn的s32
             fpn_outputs[i] = fpn_output
 
-        # c6c7
-        c6_input = fpn_outputs[0]   # fpn的s32
-        c6 = self.c6_conv(c6_input)
-        c7 = self.c7_conv(c6)
+        # p6p7
+        p6_input = fpn_outputs[0]   # fpn的s32
+        p6 = self.p6_conv(p6_input)
+        p7 = self.p7_conv(p6)
 
-        outs = [c7, c6] + fpn_outputs   # [s128, s64, s32, s16, s8]
+        outs = [p7, p6] + fpn_outputs   # [s128, s64, s32, s16, s8]
         spatial_scale = [1. / 128., 1. / 64., 1. / 32., 1. / 16., 1. / 8.]
         return outs, spatial_scale
 

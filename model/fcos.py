@@ -16,17 +16,6 @@ class FCOS(torch.nn.Module):
         self.neck = neck
         self.head = head
 
-    # def to_cuda(self, device=None):
-    #     self.backbone = self.backbone.to_cuda(device)
-    #     self.head = self.head.to_cuda(device)
-    #     self2 = self.cuda(device)
-    #     return self2
-    #
-    # def to_eval(self):
-    #     self.backbone.to_eval()
-    #     self.head.to_eval()
-    #     self.eval()
-
     def forward(self, x, im_info, eval):
         body_feats = self.backbone(x)
         body_feats, spatial_scale = self.neck(body_feats)
