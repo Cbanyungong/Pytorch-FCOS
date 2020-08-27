@@ -47,9 +47,9 @@ if __name__ == '__main__':
     # input_shape = (608, 608)
 
     # 验证时的分数阈值和nms_iou阈值
-    conf_thresh = 0.05
+    conf_thresh = 0.025
     conf_thresh = 0.2
-    nms_thresh = 0.45
+    nms_thresh = 0.6
 
     # 是否给图片画框。不画可以提速。读图片、后处理还可以继续优化。
     draw_image = True

@@ -27,44 +27,35 @@ class Decode(object):
             self.draw(image, boxes, scores, classes)
         return image, boxes, scores, classes
 
-    # 多线程后处理
-    def multi_thread_post(self, batch_img, outs, i, draw_image, result_image, result_boxes, result_scores, result_classes):
-        a1 = np.reshape(outs[0][i], (1, self.input_shape[0] // 32, self.input_shape[1] // 32, 3, 5 + self.num_classes))
-        a2 = np.reshape(outs[1][i], (1, self.input_shape[0] // 16, self.input_shape[1] // 16, 3, 5 + self.num_classes))
-        a3 = np.reshape(outs[2][i], (1, self.input_shape[0] // 8, self.input_shape[1] // 8, 3, 5 + self.num_classes))
-        boxes, scores, classes = self._fcos_out([a1, a2, a3], batch_img[i].shape)
-        if boxes is not None and draw_image:
-            self.draw(batch_img[i], boxes, scores, classes)
-        result_image[i] = batch_img[i]
-        result_boxes[i] = boxes
-        result_scores[i] = scores
-        result_classes[i] = classes
-
     # 处理一批图片
     def detect_batch(self, batch_img, draw_image):
         batch_size = len(batch_img)
         result_image, result_boxes, result_scores, result_classes = [None] * batch_size, [None] * batch_size, [None] * batch_size, [None] * batch_size
         batch = []
+        batch_im_info = []
 
         for image in batch_img:
-            pimage = self.process_image(np.copy(image))
+            pimage, im_info = self.process_image(np.copy(image))
             batch.append(pimage)
+            batch_im_info.append(im_info)
         batch = np.concatenate(batch, axis=0)
-        batch = batch.transpose(0, 3, 1, 2)
+        batch_im_info = np.concatenate(batch_im_info, axis=0)
         batch = torch.Tensor(batch)
-        outs = self._fcos(batch)
-        outs = [o.cpu().detach().numpy() for o in outs]
+        batch_im_info = torch.Tensor(batch_im_info)
+        if self.use_gpu:
+            batch = batch.cuda()
+            batch_im_info = batch_im_info.cuda()
+        pred_boxes, pred_scores = self._fcos(batch, batch_im_info, eval=True)
+        pred_boxes = pred_boxes.cpu().detach().numpy()    # [N, 所有格子, 4]，最终坐标
+        pred_scores = pred_scores.cpu().detach().numpy()  # [N, 80, 所有格子]，最终分数
 
-        # 多线程
-        threads = []
-        for i in range(batch_size):
-            t = threading.Thread(target=self.multi_thread_post, args=(
-                batch_img, outs, i, draw_image, result_image, result_boxes, result_scores, result_classes))
-            threads.append(t)
-            t.start()
-        # 等待所有线程任务结束。
-        for t in threads:
-            t.join()
+        boxes, scores, classes = self._fcos_out(pred_boxes[0], pred_scores[0])
+        if boxes is not None and draw_image:
+            self.draw(batch_img[0], boxes, scores, classes)
+        result_image[0] = batch_img[0]
+        result_boxes[0] = boxes
+        result_scores[0] = scores
+        result_classes[0] = classes
         return result_image, result_boxes, result_scores, result_classes
 
     # 处理视频
