@@ -49,16 +49,16 @@ class FCOSHead(torch.nn.Module):
         #     self.nms = MultiClassNMS(**nms)
 
 
-        self.scales_on_reg = []       # 回归分支（预测框坐标）的系数
-        self.cls_convs_per_feature = []   # 每个fpn输出特征图再进行卷积的卷积层，用于预测类别
-        self.reg_convs_per_feature = []   # 每个fpn输出特征图再进行卷积的卷积层，用于预测坐标
-        self.ctn_convs_per_feature = []   # 用于预测centerness
+        self.scales_on_reg = torch.nn.ParameterList()       # 回归分支（预测框坐标）的系数
+        self.cls_convs_per_feature = torch.nn.ModuleList()   # 每个fpn输出特征图再进行卷积的卷积层，用于预测类别
+        self.reg_convs_per_feature = torch.nn.ModuleList()   # 每个fpn输出特征图再进行卷积的卷积层，用于预测坐标
+        self.ctn_convs_per_feature = torch.nn.ModuleList()   # 用于预测centerness
         n = len(self.fpn_stride)      # 有n个输出层
         for i in range(n):     # 遍历每个输出层
             scale = torch.nn.Parameter(torch.ones(1, ))
             self.scales_on_reg.append(scale)
-            cls_convs_this_feature = []   # 这个fpn输出特征图再进行卷积的卷积层，用于预测类别
-            reg_convs_this_feature = []   # 这个fpn输出特征图再进行卷积的卷积层，用于预测坐标
+            cls_convs_this_feature = torch.nn.ModuleList()   # 这个fpn输出特征图再进行卷积的卷积层，用于预测类别
+            reg_convs_this_feature = torch.nn.ModuleList()   # 这个fpn输出特征图再进行卷积的卷积层，用于预测坐标
             for lvl in range(0, self.num_convs):
                 # 使用gn，组数是32，而且带激活relu
                 cls_conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
@@ -80,33 +80,6 @@ class FCOSHead(torch.nn.Module):
             self.ctn_convs_per_feature.append(ctn_last_conv_layer)
 
         self.relu = torch.nn.ReLU()
-
-
-    def to_cuda(self, device=None):
-        n = len(self.fpn_stride)      # 有n个输出层
-        for i in range(n):     # 遍历每个输出层
-            self.scales_on_reg[i] = self.scales_on_reg[i].cuda(device)
-            for lvl in range(0, self.num_convs):
-                self.cls_convs_per_feature[i][lvl] = self.cls_convs_per_feature[i][lvl].cuda(device)
-                self.reg_convs_per_feature[i][lvl] = self.reg_convs_per_feature[i][lvl].cuda(device)
-            self.cls_convs_per_feature[i][-1] = self.cls_convs_per_feature[i][-1].cuda(device)
-            self.reg_convs_per_feature[i][-1] = self.reg_convs_per_feature[i][-1].cuda(device)
-            self.ctn_convs_per_feature[i] = self.ctn_convs_per_feature[i].cuda(device)
-        self2 = self.cuda(device)
-        return self2
-
-    def to_eval(self):
-        n = len(self.fpn_stride)      # 有n个输出层
-        for i in range(n):     # 遍历每个输出层
-            # self.scales_on_reg[i].eval()
-            for lvl in range(0, self.num_convs):
-                self.cls_convs_per_feature[i][lvl].eval()
-                self.reg_convs_per_feature[i][lvl].eval()
-            self.cls_convs_per_feature[i][-1].eval()
-            self.reg_convs_per_feature[i][-1].eval()
-            self.ctn_convs_per_feature[i].eval()
-        self.eval()
-
 
     def _fcos_head(self, features, fpn_stride, i, is_training=False):
         """
