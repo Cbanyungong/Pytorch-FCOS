@@ -10,7 +10,13 @@
 # ================================================================
 import cv2
 import uuid
+import random
 import numpy as np
+from PIL import Image, ImageEnhance, ImageDraw
+
+import logging
+logger = logging.getLogger(__name__)
+
 
 try:
     from collections.abc import Sequence
@@ -24,6 +30,12 @@ class BboxError(ValueError):
 
 class ImageError(ValueError):
     pass
+
+
+def is_poly(segm):
+    assert isinstance(segm, (list, dict)), \
+        "Invalid segm type: {}".format(type(segm))
+    return isinstance(segm, list)
 
 
 
@@ -48,76 +60,72 @@ class BaseOperator(object):
 
 
 class DecodeImage(BaseOperator):
-    def __init__(self, to_rgb=True, with_mixup=False):
+    def __init__(self, to_rgb=True, with_mixup=False, with_cutmix=False):
         """ Transform the image data to numpy format.
-        对图片解码。最开始的一步。把图片读出来（rgb格式），加入到sample['image']。一维数组[h, w, 1]加入到sample['im_info']
         Args:
             to_rgb (bool): whether to convert BGR to RGB
             with_mixup (bool): whether or not to mixup image and gt_bbbox/gt_score
+            with_cutmix (bool): whether or not to cutmix image and gt_bbbox/gt_score
         """
 
         super(DecodeImage, self).__init__()
         self.to_rgb = to_rgb
         self.with_mixup = with_mixup
+        self.with_cutmix = with_cutmix
         if not isinstance(self.to_rgb, bool):
             raise TypeError("{}: input type is invalid.".format(self))
         if not isinstance(self.with_mixup, bool):
             raise TypeError("{}: input type is invalid.".format(self))
 
-    def __call__(self, sample, context=None, coco=None):
+    def __call__(self, sample, context=None):
         """ load image if 'im_file' field is not empty but 'image' is"""
         if 'image' not in sample:
             with open(sample['im_file'], 'rb') as f:
-                sample['image'] = f.read()   # 增加一对键值对'image'。
+                sample['image'] = f.read()
 
         im = sample['image']
         data = np.frombuffer(im, dtype='uint8')
         im = cv2.imdecode(data, 1)  # BGR mode, but need RGB mode
+
         if self.to_rgb:
             im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         sample['image'] = im
 
         if 'h' not in sample:
             sample['h'] = im.shape[0]
+        elif sample['h'] != im.shape[0]:
+            logger.warn(
+                "The actual image height: {} is not equal to the "
+                "height: {} in annotation, and update sample['h'] by actual "
+                "image height.".format(im.shape[0], sample['h']))
+            sample['h'] = im.shape[0]
         if 'w' not in sample:
             sample['w'] = im.shape[1]
+        elif sample['w'] != im.shape[1]:
+            logger.warn(
+                "The actual image width: {} is not equal to the "
+                "width: {} in annotation, and update sample['w'] by actual "
+                "image width.".format(im.shape[1], sample['w']))
+            sample['w'] = im.shape[1]
+
         # make default im_info with [h, w, 1]
-        sample['im_info'] = np.array(   # 增加一对键值对'im_info'。
+        sample['im_info'] = np.array(
             [im.shape[0], im.shape[1], 1.], dtype=np.float32)
+
         # decode mixup image
         if self.with_mixup and 'mixup' in sample:
-            self.__call__(sample['mixup'], context, coco)
+            self.__call__(sample['mixup'], context)
 
-        # 掩码图片。如果是训练集的话。
-        '''if 'gt_poly' in sample:
-            gt_poly = sample['gt_poly']
-            assert len(gt_poly) == len(sample['gt_bbox']), "Poly Numbers Error."
-            gt_mask = []
-            if len(gt_poly) > 0:
-                # 最初的方案，用cv2.fillPoly()画出真实掩码。因为有取整，发现有点偏差。
-                # for obj_polys in gt_poly:
-                #     mask = np.zeros((im.shape[0], im.shape[1]), dtype="uint8")
-                #     for poly in obj_polys:  # coco数据集里，一个物体由多个多边形表示时（比如物体被挡住，不连通时）
-                #         points = np.array(poly)
-                #         points = np.reshape(points, (-1, 2))
-                #         points = points.astype(np.int32)
-                #         vertices = np.array([points], dtype=np.int32)
-                #         cv2.fillPoly(mask, vertices, 1)   # 一定要是这个API而不是fillConvexPoly()，后者只能填充凸多边形而不支持凹多边形。
-                #         mask = np.reshape(mask, (im.shape[0], im.shape[1], 1))
-                #     gt_mask.append(mask)
-                # gt_mask = np.concatenate(gt_mask, axis=-1)
+        # decode cutmix image
+        if self.with_cutmix and 'cutmix' in sample:
+            self.__call__(sample['cutmix'], context)
 
-                # 现在的方案，用annToMask()得到真实掩码
-                anno_id = sample['anno_id']
-                target = coco.loadAnns(anno_id)
-                # mask是一个list，里面每一个元素是一个shape=(height*width,)的ndarray，1代表是这个注解注明的物体，0代表其他物体和背景。
-                masks = [coco.annToMask(obj).reshape(-1) for obj in target]
-                masks = np.vstack(masks)  # 设N=len(mask)=注解数，这一步将mask转换成一个ndarray，shape=(N, height*width)
-                masks = masks.reshape(-1, im.shape[0], im.shape[1])  # shape=(N, height, width)
-                gt_mask = masks.transpose(1, 2, 0)     # shape=(height, width, N)
-            else:   # 对于没有gt的纯背景图，弄1个方便后面的增强跟随sample['image']
-                gt_mask = np.zeros((im.shape[0], im.shape[1], 1), dtype=np.int32)
-            sample['gt_mask'] = gt_mask'''
+        # decode semantic label
+        if 'semantic' in sample.keys() and sample['semantic'] is not None:
+            sem_file = sample['semantic']
+            sem = cv2.imread(sem_file, cv2.IMREAD_GRAYSCALE)
+            sample['semantic'] = sem.astype('int32')
+
         return sample
 
 
@@ -401,16 +409,11 @@ class RandomFlipImage(BaseOperator):
 
         def _flip_rle(rle, height, width):
             if 'counts' in rle and type(rle['counts']) == list:
-                rle = mask_util.frPyObjects([rle], height, width)
+                rle = mask_util.frPyObjects(rle, height, width)
             mask = mask_util.decode(rle)
-            mask = mask[:, ::-1, :]
+            mask = mask[:, ::-1]
             rle = mask_util.encode(np.array(mask, order='F', dtype=np.uint8))
             return rle
-
-        def is_poly(segm):
-            assert isinstance(segm, (list, dict)), \
-                "Invalid segm type: {}".format(type(segm))
-            return isinstance(segm, list)
 
         flipped_segms = []
         for segm in segms:
@@ -422,6 +425,16 @@ class RandomFlipImage(BaseOperator):
                 import pycocotools.mask as mask_util
                 flipped_segms.append(_flip_rle(segm, height, width))
         return flipped_segms
+
+    def flip_keypoint(self, gt_keypoint, width):
+        for i in range(gt_keypoint.shape[1]):
+            if i % 2 == 0:
+                old_x = gt_keypoint[:, i].copy()
+                if self.is_normalized:
+                    gt_keypoint[:, i] = 1 - old_x
+                else:
+                    gt_keypoint[:, i] = width - old_x - 1
+        return gt_keypoint
 
     def __call__(self, sample, context=None):
         """Filp the image and bounding box.
@@ -444,7 +457,6 @@ class RandomFlipImage(BaseOperator):
         for sample in samples:
             gt_bbox = sample['gt_bbox']
             im = sample['image']
-            # gt_mask = sample['gt_mask']
             if not isinstance(im, np.ndarray):
                 raise TypeError("{}: image is not a numpy array.".format(self))
             if len(im.shape) != 3:
@@ -452,7 +464,6 @@ class RandomFlipImage(BaseOperator):
             height, width, _ = im.shape
             if np.random.uniform(0, 1) < self.prob:
                 im = im[:, ::-1, :]
-                # gt_mask = gt_mask[:, ::-1, :]
                 if gt_bbox.shape[0] == 0:
                     return sample
                 oldx1 = gt_bbox[:, 0].copy()
@@ -472,9 +483,17 @@ class RandomFlipImage(BaseOperator):
                 if self.is_mask_flip and len(sample['gt_poly']) != 0:
                     sample['gt_poly'] = self.flip_segms(sample['gt_poly'],
                                                         height, width)
+
+                if 'gt_keypoint' in sample.keys():
+                    sample['gt_keypoint'] = self.flip_keypoint(
+                        sample['gt_keypoint'], width)
+
+                if 'semantic' in sample.keys() and sample[
+                        'semantic'] is not None:
+                    sample['semantic'] = sample['semantic'][:, ::-1]
+
                 sample['flipped'] = True
                 sample['image'] = im
-                # sample['gt_mask'] = gt_mask
         sample = samples if batch_input else samples[0]
         return sample
 
@@ -608,7 +627,7 @@ class RandomShape(BaseOperator):
 
 class NormalizeImage(BaseOperator):
     def __init__(self,
-                 mean=[0., 0., 0.],
+                 mean=[0.485, 0.456, 0.406],
                  std=[1, 1, 1],
                  is_scale=True,
                  is_channel_first=True):
@@ -646,176 +665,412 @@ class NormalizeImage(BaseOperator):
                 if k.startswith('image'):
                     im = sample[k]
                     im = im.astype(np.float32, copy=False)
-                    # if self.is_channel_first:
-                    #     mean = np.array(self.mean)[:, np.newaxis, np.newaxis]
-                    #     std = np.array(self.std)[:, np.newaxis, np.newaxis]
-                    # else:
-                    #     mean = np.array(self.mean)[np.newaxis, np.newaxis, :]
-                    #     std = np.array(self.std)[np.newaxis, np.newaxis, :]
+                    if self.is_channel_first:
+                        mean = np.array(self.mean)[:, np.newaxis, np.newaxis]
+                        std = np.array(self.std)[:, np.newaxis, np.newaxis]
+                    else:
+                        mean = np.array(self.mean)[np.newaxis, np.newaxis, :]
+                        std = np.array(self.std)[np.newaxis, np.newaxis, :]
                     if self.is_scale:
                         im = im / 255.0
-                    # im -= mean
-                    # im /= std
+                    im -= mean
+                    im /= std
                     sample[k] = im
         if not batch_input:
             samples = samples[0]
         return samples
 
+class ResizeImage(BaseOperator):
+    def __init__(self,
+                 target_size=0,
+                 max_size=0,
+                 interp=cv2.INTER_LINEAR,
+                 use_cv2=True):
+        """
+        Rescale image to the specified target size, and capped at max_size
+        if max_size != 0.
+        If target_size is list, selected a scale randomly as the specified
+        target size.
+        Args:
+            target_size (int|list): the target size of image's short side,
+                multi-scale training is adopted when type is list.
+            max_size (int): the max size of image
+            interp (int): the interpolation method
+            use_cv2 (bool): use the cv2 interpolation method or use PIL
+                interpolation method
+        """
+        super(ResizeImage, self).__init__()
+        self.max_size = int(max_size)
+        self.interp = int(interp)
+        self.use_cv2 = use_cv2
+        if not (isinstance(target_size, int) or isinstance(target_size, list)):
+            raise TypeError(
+                "Type of target_size is invalid. Must be Integer or List, now is {}".
+                format(type(target_size)))
+        self.target_size = target_size
+        if not (isinstance(self.max_size, int) and isinstance(self.interp,
+                                                              int)):
+            raise TypeError("{}: input type is invalid.".format(self))
 
-def bbox_area(src_bbox):
-    if src_bbox[2] < src_bbox[0] or src_bbox[3] < src_bbox[1]:
-        return 0.
-    else:
-        width = src_bbox[2] - src_bbox[0]
-        height = src_bbox[3] - src_bbox[1]
-        return width * height
+    def __call__(self, sample, context=None):
+        """ Resize the image numpy.
+        """
+        im = sample['image']
+        if not isinstance(im, np.ndarray):
+            raise TypeError("{}: image type is not numpy.".format(self))
+        if len(im.shape) != 3:
+            raise ImageError('{}: image is not 3-dimensional.'.format(self))
+        im_shape = im.shape
+        im_size_min = np.min(im_shape[0:2])
+        im_size_max = np.max(im_shape[0:2])
+        if isinstance(self.target_size, list):
+            # Case for multi-scale training
+            selected_size = random.choice(self.target_size)
+        else:
+            selected_size = self.target_size
+        if float(im_size_min) == 0:
+            raise ZeroDivisionError('{}: min size of image is 0'.format(self))
+        if self.max_size != 0:
+            im_scale = float(selected_size) / float(im_size_min)
+            # Prevent the biggest axis from being more than max_size
+            if np.round(im_scale * im_size_max) > self.max_size:
+                im_scale = float(self.max_size) / float(im_size_max)
+            im_scale_x = im_scale
+            im_scale_y = im_scale
 
-def jaccard_overlap(sample_bbox, object_bbox):
-    if sample_bbox[0] >= object_bbox[2] or \
-        sample_bbox[2] <= object_bbox[0] or \
-        sample_bbox[1] >= object_bbox[3] or \
-        sample_bbox[3] <= object_bbox[1]:
-        return 0
-    intersect_xmin = max(sample_bbox[0], object_bbox[0])
-    intersect_ymin = max(sample_bbox[1], object_bbox[1])
-    intersect_xmax = min(sample_bbox[2], object_bbox[2])
-    intersect_ymax = min(sample_bbox[3], object_bbox[3])
-    intersect_size = (intersect_xmax - intersect_xmin) * (
-        intersect_ymax - intersect_ymin)
-    sample_bbox_size = bbox_area(sample_bbox)
-    object_bbox_size = bbox_area(object_bbox)
-    overlap = intersect_size / (
-        sample_bbox_size + object_bbox_size - intersect_size)
-    return overlap
+            resize_w = im_scale_x * float(im_shape[1])
+            resize_h = im_scale_y * float(im_shape[0])
+            im_info = [resize_h, resize_w, im_scale]
+            if 'im_info' in sample and sample['im_info'][2] != 1.:
+                sample['im_info'] = np.append(
+                    list(sample['im_info']), im_info).astype(np.float32)
+            else:
+                sample['im_info'] = np.array(im_info).astype(np.float32)
+        else:
+            im_scale_x = float(selected_size) / float(im_shape[1])
+            im_scale_y = float(selected_size) / float(im_shape[0])
 
-class Gt2YoloTarget(BaseOperator):
+            resize_w = selected_size
+            resize_h = selected_size
+
+        if self.use_cv2:
+            im = cv2.resize(
+                im,
+                None,
+                None,
+                fx=im_scale_x,
+                fy=im_scale_y,
+                interpolation=self.interp)
+            if 'semantic' in sample.keys() and sample['semantic'] is not None:
+                semantic = sample['semantic']
+                semantic = cv2.resize(
+                    semantic.astype('float32'),
+                    None,
+                    None,
+                    fx=im_scale_x,
+                    fy=im_scale_y,
+                    interpolation=self.interp)
+                semantic = np.asarray(semantic).astype('int32')
+                semantic = np.expand_dims(semantic, 0)
+                sample['semantic'] = semantic
+        else:
+            if self.max_size != 0:
+                raise TypeError(
+                    'If you set max_size to cap the maximum size of image,'
+                    'please set use_cv2 to True to resize the image.')
+            im = im.astype('uint8')
+            im = Image.fromarray(im)
+            im = im.resize((int(resize_w), int(resize_h)), self.interp)
+            im = np.array(im)
+        sample['image'] = im
+        return sample
+
+class Permute(BaseOperator):
+    def __init__(self, to_bgr=True, channel_first=True):
+        """
+        Change the channel.
+        Args:
+            to_bgr (bool): confirm whether to convert RGB to BGR
+            channel_first (bool): confirm whether to change channel
+        """
+        super(Permute, self).__init__()
+        self.to_bgr = to_bgr
+        self.channel_first = channel_first
+        if not (isinstance(self.to_bgr, bool) and
+                isinstance(self.channel_first, bool)):
+            raise TypeError("{}: input type is invalid.".format(self))
+
+    def __call__(self, sample, context=None):
+        samples = sample
+        batch_input = True
+        if not isinstance(samples, Sequence):
+            batch_input = False
+            samples = [samples]
+        for sample in samples:
+            assert 'image' in sample, "image data not found"
+            for k in sample.keys():
+                # hard code
+                if k.startswith('image'):
+                    im = sample[k]
+                    if self.channel_first:
+                        im = np.swapaxes(im, 1, 2)
+                        im = np.swapaxes(im, 1, 0)
+                    if self.to_bgr:
+                        im = im[[2, 1, 0], :, :]
+                    sample[k] = im
+        if not batch_input:
+            samples = samples[0]
+        return samples
+
+class PadBatch(BaseOperator):
     """
-    Generate YOLOv3 targets by groud truth data, this operator is only used in
-    fine grained YOLOv3 loss mode
+    Pad a batch of samples so they can be divisible by a stride.
+    The layout of each image should be 'CHW'.
+    Args:
+        pad_to_stride (int): If `pad_to_stride > 0`, pad zeros to ensure
+            height and width is divisible by `pad_to_stride`.
+    """
+
+    def __init__(self, pad_to_stride=0, use_padded_im_info=True):
+        super(PadBatch, self).__init__()
+        self.pad_to_stride = pad_to_stride
+        self.use_padded_im_info = use_padded_im_info
+
+    def __call__(self, samples, context=None):
+        """
+        Args:
+            samples (list): a batch of sample, each is dict.
+        """
+        coarsest_stride = self.pad_to_stride
+        if coarsest_stride == 0:
+            return samples
+        max_shape = np.array([data['image'].shape for data in samples]).max(
+            axis=0)
+
+        if coarsest_stride > 0:
+            max_shape[1] = int(
+                np.ceil(max_shape[1] / coarsest_stride) * coarsest_stride)
+            max_shape[2] = int(
+                np.ceil(max_shape[2] / coarsest_stride) * coarsest_stride)
+
+        padding_batch = []
+        for data in samples:
+            im = data['image']
+            im_c, im_h, im_w = im.shape[:]
+            padding_im = np.zeros(
+                (im_c, max_shape[1], max_shape[2]), dtype=np.float32)
+            padding_im[:, :im_h, :im_w] = im
+            data['image'] = padding_im
+            if self.use_padded_im_info:
+                data['im_info'][:2] = max_shape[1:3]
+            if 'semantic' in data.keys() and data['semantic'] is not None:
+                semantic = data['semantic']
+                padding_sem = np.zeros(
+                    (1, max_shape[1], max_shape[2]), dtype=np.float32)
+                padding_sem[:, :im_h, :im_w] = semantic
+                data['semantic'] = padding_sem
+
+        return samples
+
+
+class Gt2FCOSTarget(BaseOperator):
+    """
+    Generate FCOS targets by groud truth data
     """
 
     def __init__(self,
-                 anchors,
-                 anchor_masks,
+                 object_sizes_boundary,
+                 center_sampling_radius,
                  downsample_ratios,
-                 num_classes=80,
-                 iou_thresh=1.):
-        super(Gt2YoloTarget, self).__init__()
-        self.anchors = anchors
-        self.anchor_masks = anchor_masks
+                 norm_reg_targets=False):
+        super(Gt2FCOSTarget, self).__init__()
+        self.center_sampling_radius = center_sampling_radius
         self.downsample_ratios = downsample_ratios
-        self.num_classes = num_classes
-        self.iou_thresh = iou_thresh
+        self.INF = np.inf
+        self.object_sizes_boundary = [-1] + object_sizes_boundary + [self.INF]
+        object_sizes_of_interest = []
+        for i in range(len(self.object_sizes_boundary) - 1):
+            object_sizes_of_interest.append([
+                self.object_sizes_boundary[i], self.object_sizes_boundary[i + 1]
+            ])
+        self.object_sizes_of_interest = object_sizes_of_interest
+        self.norm_reg_targets = norm_reg_targets
+
+    def _compute_points(self, w, h):
+        """
+        compute the corresponding points in each feature map
+        :param h: image height
+        :param w: image width
+        :return: points from all feature map
+        """
+        locations = []
+        for stride in self.downsample_ratios:
+            shift_x = np.arange(0, w, stride).astype(np.float32)
+            shift_y = np.arange(0, h, stride).astype(np.float32)
+            shift_x, shift_y = np.meshgrid(shift_x, shift_y)
+            shift_x = shift_x.flatten()
+            shift_y = shift_y.flatten()
+            location = np.stack([shift_x, shift_y], axis=1) + stride // 2
+            locations.append(location)
+        num_points_each_level = [len(location) for location in locations]
+        locations = np.concatenate(locations, axis=0)
+        return locations, num_points_each_level
+
+    def _convert_xywh2xyxy(self, gt_bbox, w, h):
+        """
+        convert the bounding box from style xywh to xyxy
+        :param gt_bbox: bounding boxes normalized into [0, 1]
+        :param w: image width
+        :param h: image height
+        :return: bounding boxes in xyxy style
+        """
+        bboxes = gt_bbox.copy()
+        bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
+        bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
+        bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
+        bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
+        return bboxes
+
+    def _check_inside_boxes_limited(self, gt_bbox, xs, ys,
+                                    num_points_each_level):
+        """
+        check if points is within the clipped boxes
+        :param gt_bbox: bounding boxes
+        :param xs: horizontal coordinate of points
+        :param ys: vertical coordinate of points
+        :return: the mask of points is within gt_box or not
+        """
+        bboxes = np.reshape(
+            gt_bbox, newshape=[1, gt_bbox.shape[0], gt_bbox.shape[1]])
+        bboxes = np.tile(bboxes, reps=[xs.shape[0], 1, 1])
+        ct_x = (bboxes[:, :, 0] + bboxes[:, :, 2]) / 2
+        ct_y = (bboxes[:, :, 1] + bboxes[:, :, 3]) / 2
+        beg = 0
+        clipped_box = bboxes.copy()
+        for lvl, stride in enumerate(self.downsample_ratios):
+            end = beg + num_points_each_level[lvl]
+            stride_exp = self.center_sampling_radius * stride
+            clipped_box[beg:end, :, 0] = np.maximum(
+                bboxes[beg:end, :, 0], ct_x[beg:end, :] - stride_exp)
+            clipped_box[beg:end, :, 1] = np.maximum(
+                bboxes[beg:end, :, 1], ct_y[beg:end, :] - stride_exp)
+            clipped_box[beg:end, :, 2] = np.minimum(
+                bboxes[beg:end, :, 2], ct_x[beg:end, :] + stride_exp)
+            clipped_box[beg:end, :, 3] = np.minimum(
+                bboxes[beg:end, :, 3], ct_y[beg:end, :] + stride_exp)
+            beg = end
+        l_res = xs - clipped_box[:, :, 0]
+        r_res = clipped_box[:, :, 2] - xs
+        t_res = ys - clipped_box[:, :, 1]
+        b_res = clipped_box[:, :, 3] - ys
+        clipped_box_reg_targets = np.stack([l_res, t_res, r_res, b_res], axis=2)
+        inside_gt_box = np.min(clipped_box_reg_targets, axis=2) > 0
+        return inside_gt_box
 
     def __call__(self, samples, context=None):
-        assert len(self.anchor_masks) == len(self.downsample_ratios), \
-            "anchor_masks', and 'downsample_ratios' should have same length."
+        assert len(self.object_sizes_of_interest) == len(self.downsample_ratios), \
+            "object_sizes_of_interest', and 'downsample_ratios' should have same length."
 
-        h, w = samples[0]['image'].shape[:2]
-        an_hw = np.array(self.anchors) / np.array([[w, h]])
-
-
-        batch_size = len(samples)
-        batch_image = np.zeros((batch_size, h, w, 3))
-        # 准备标记
-        batch_label_sbbox = np.zeros((batch_size, int(h / self.downsample_ratios[2]), int(w / self.downsample_ratios[2]),
-                                      len(self.anchor_masks[0]), 5 + self.num_classes))
-        batch_label_mbbox = np.zeros((batch_size, int(h / self.downsample_ratios[1]), int(w / self.downsample_ratios[1]),
-                                      len(self.anchor_masks[0]), 5 + self.num_classes))
-        batch_label_lbbox = np.zeros((batch_size, int(h / self.downsample_ratios[0]), int(w / self.downsample_ratios[0]),
-                                      len(self.anchor_masks[0]), 5 + self.num_classes))
-        batch_gt_bbox = np.zeros((batch_size, samples[0]['gt_bbox'].shape[0], 4))
-        batch_label = [batch_label_lbbox, batch_label_mbbox, batch_label_sbbox]
-
-        p = 0
         for sample in samples:
             # im, gt_bbox, gt_class, gt_score = sample
             im = sample['image']
-            gt_bbox = sample['gt_bbox']
+            im_info = sample['im_info']
+            bboxes = sample['gt_bbox']
             gt_class = sample['gt_class']
             gt_score = sample['gt_score']
-            for i, (
-                    mask, downsample_ratio
-            ) in enumerate(zip(self.anchor_masks, self.downsample_ratios)):
-                grid_h = int(h / downsample_ratio)
-                grid_w = int(w / downsample_ratio)
-                target = np.zeros(
-                    (grid_h, grid_w, len(mask), 5 + self.num_classes),
-                    dtype=np.float32)
-                for b in range(gt_bbox.shape[0]):
-                    gx, gy, gw, gh = gt_bbox[b, :]
-                    cls = gt_class[b]
-                    score = gt_score[b]
-                    if gw <= 0. or gh <= 0. or score <= 0.:
-                        continue
+            bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * np.floor(im_info[1]) / \
+                np.floor(im_info[1] / im_info[2])
+            bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * np.floor(im_info[0]) / \
+                np.floor(im_info[0] / im_info[2])
+            # calculate the locations
+            h, w = sample['image'].shape[1:3]
+            points, num_points_each_level = self._compute_points(w, h)
+            object_scale_exp = []
+            for i, num_pts in enumerate(num_points_each_level):
+                object_scale_exp.append(
+                    np.tile(
+                        np.array([self.object_sizes_of_interest[i]]),
+                        reps=[num_pts, 1]))
+            object_scale_exp = np.concatenate(object_scale_exp, axis=0)
 
-                    # find best match anchor index
-                    best_iou = 0.
-                    best_idx = -1
-                    for an_idx in range(an_hw.shape[0]):
-                        iou = jaccard_overlap(
-                            [0., 0., gw, gh],
-                            [0., 0., an_hw[an_idx, 0], an_hw[an_idx, 1]])
-                        if iou > best_iou:
-                            best_iou = iou
-                            best_idx = an_idx
+            gt_area = (bboxes[:, 2] - bboxes[:, 0]) * (
+                bboxes[:, 3] - bboxes[:, 1])
+            xs, ys = points[:, 0], points[:, 1]
+            xs = np.reshape(xs, newshape=[xs.shape[0], 1])
+            xs = np.tile(xs, reps=[1, bboxes.shape[0]])
+            ys = np.reshape(ys, newshape=[ys.shape[0], 1])
+            ys = np.tile(ys, reps=[1, bboxes.shape[0]])
 
-                    gi = int(gx * grid_w)
-                    gj = int(gy * grid_h)
+            l_res = xs - bboxes[:, 0]
+            r_res = bboxes[:, 2] - xs
+            t_res = ys - bboxes[:, 1]
+            b_res = bboxes[:, 3] - ys
+            reg_targets = np.stack([l_res, t_res, r_res, b_res], axis=2)
+            if self.center_sampling_radius > 0:
+                is_inside_box = self._check_inside_boxes_limited(
+                    bboxes, xs, ys, num_points_each_level)
+            else:
+                is_inside_box = np.min(reg_targets, axis=2) > 0
+            # check if the targets is inside the corresponding level
+            max_reg_targets = np.max(reg_targets, axis=2)
+            lower_bound = np.tile(
+                np.expand_dims(
+                    object_scale_exp[:, 0], axis=1),
+                reps=[1, max_reg_targets.shape[1]])
+            high_bound = np.tile(
+                np.expand_dims(
+                    object_scale_exp[:, 1], axis=1),
+                reps=[1, max_reg_targets.shape[1]])
+            is_match_current_level = \
+                (max_reg_targets > lower_bound) & \
+                (max_reg_targets < high_bound)
+            points2gtarea = np.tile(
+                np.expand_dims(
+                    gt_area, axis=0), reps=[xs.shape[0], 1])
+            points2gtarea[is_inside_box == 0] = self.INF
+            points2gtarea[is_match_current_level == 0] = self.INF
+            points2min_area = points2gtarea.min(axis=1)
+            points2min_area_ind = points2gtarea.argmin(axis=1)
+            labels = gt_class[points2min_area_ind] + 1
+            labels[points2min_area == self.INF] = 0
+            reg_targets = reg_targets[range(xs.shape[0]), points2min_area_ind]
+            ctn_targets = np.sqrt((reg_targets[:, [0, 2]].min(axis=1) / \
+                                  reg_targets[:, [0, 2]].max(axis=1)) * \
+                                  (reg_targets[:, [1, 3]].min(axis=1) / \
+                                   reg_targets[:, [1, 3]].max(axis=1))).astype(np.float32)
+            ctn_targets = np.reshape(
+                ctn_targets, newshape=[ctn_targets.shape[0], 1])
+            ctn_targets[labels <= 0] = 0
+            pos_ind = np.nonzero(labels != 0)
+            reg_targets_pos = reg_targets[pos_ind[0], :]
+            split_sections = []
+            beg = 0
+            for lvl in range(len(num_points_each_level)):
+                end = beg + num_points_each_level[lvl]
+                split_sections.append(end)
+                beg = end
+            labels_by_level = np.split(labels, split_sections, axis=0)
+            reg_targets_by_level = np.split(reg_targets, split_sections, axis=0)
+            ctn_targets_by_level = np.split(ctn_targets, split_sections, axis=0)
+            for lvl in range(len(self.downsample_ratios)):
+                grid_w = int(np.ceil(w / self.downsample_ratios[lvl]))
+                grid_h = int(np.ceil(h / self.downsample_ratios[lvl]))
+                if self.norm_reg_targets:
+                    sample['reg_target{}'.format(lvl)] = \
+                        np.reshape(
+                            reg_targets_by_level[lvl] / \
+                            self.downsample_ratios[lvl],
+                            newshape=[grid_h, grid_w, 4])
+                else:
+                    sample['reg_target{}'.format(lvl)] = np.reshape(
+                        reg_targets_by_level[lvl],
+                        newshape=[grid_h, grid_w, 4])
+                sample['labels{}'.format(lvl)] = np.reshape(
+                    labels_by_level[lvl], newshape=[grid_h, grid_w, 1])
+                sample['centerness{}'.format(lvl)] = np.reshape(
+                    ctn_targets_by_level[lvl], newshape=[grid_h, grid_w, 1])
+        return samples
 
-                    # gtbox should be regresed in this layes if best match
-                    # anchor index in anchor mask of this layer
-                    if best_idx in mask:
-                        best_n = mask.index(best_idx)
-
-                        # x, y, w, h, scale
-                        target[gj, gi, best_n, 0] = gx * w
-                        target[gj, gi, best_n, 1] = gy * h
-                        target[gj, gi, best_n, 2] = gw * w
-                        target[gj, gi, best_n, 3] = gh * h
-
-                        # objectness record gt_score
-                        target[gj, gi, best_n, 4] = score
-
-                        # classification
-                        onehot = np.zeros(self.num_classes, dtype=np.float)
-                        onehot[cls] = 1.0
-                        uniform_distribution = np.full(self.num_classes, 1.0 / self.num_classes)
-                        deta = 0.01
-                        smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
-                        target[gj, gi, best_n, 5:] = smooth_onehot
-
-                    # For non-matched anchors, calculate the target if the iou
-                    # between anchor and gt is larger than iou_thresh
-                    if self.iou_thresh < 1:
-                        for idx, mask_i in enumerate(mask):
-                            if mask_i == best_idx: continue
-                            iou = jaccard_overlap(
-                                [0., 0., gw, gh],
-                                [0., 0., an_hw[mask_i, 0], an_hw[mask_i, 1]])
-                            if iou > self.iou_thresh:
-                                # x, y, w, h, scale
-                                target[gj, gi, idx, 0] = gx * w
-                                target[gj, gi, idx, 1] = gy * h
-                                target[gj, gi, idx, 2] = gw * w
-                                target[gj, gi, idx, 3] = gh * h
-
-                                # objectness record gt_score
-                                target[gj, gi, idx, 4] = score
-
-                                # classification
-                                onehot = np.zeros(self.num_classes, dtype=np.float)
-                                onehot[cls] = 1.0
-                                uniform_distribution = np.full(self.num_classes, 1.0 / self.num_classes)
-                                deta = 0.01
-                                smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
-                                target[gj, gi, idx, 5:] = smooth_onehot
-                # sample['target{}'.format(i)] = target
-                batch_label[i][p, :, :, :, :] = target
-                batch_gt_bbox[p, :, :] = gt_bbox * [w, h, w, h]
-            batch_image[p, :, :, :] = im
-            p += 1
-        return batch_image, batch_label, batch_gt_bbox
 
 
 
