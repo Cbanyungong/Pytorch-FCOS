@@ -51,16 +51,15 @@ if sysstr == 'Windows':
 
 
 def multi_thread_op(i, samples, decodeImage, context, train_dataset, with_mixup, mixupImage,
-                     photometricDistort, randomCrop, randomFlipImage, normalizeBox, padBox, bboxXYXY2XYWH):
+                     photometricDistort, randomFlipImage, normalizeImage, resizeImage, permute):
     samples[i] = decodeImage(samples[i], context, train_dataset)
     if with_mixup:
         samples[i] = mixupImage(samples[i], context)
     samples[i] = photometricDistort(samples[i], context)
-    samples[i] = randomCrop(samples[i], context)
     samples[i] = randomFlipImage(samples[i], context)
-    samples[i] = normalizeBox(samples[i], context)
-    samples[i] = padBox(samples[i], context)
-    samples[i] = bboxXYXY2XYWH(samples[i], context)
+    samples[i] = normalizeImage(samples[i], context)
+    samples[i] = resizeImage(samples[i], context)
+    samples[i] = permute(samples[i], context)
 
 
 use_gpu = False
@@ -198,7 +197,7 @@ if __name__ == '__main__':
             threads = []
             for i in range(batch_size):
                 t = threading.Thread(target=multi_thread_op, args=(i, samples, decodeImage, context, train_dataset, with_mixup, mixupImage,
-                                                                   photometricDistort, randomCrop, randomFlipImage, normalizeBox, padBox, bboxXYXY2XYWH))
+                                                                   photometricDistort, randomFlipImage, normalizeImage, resizeImage, permute))
                 threads.append(t)
                 t.start()
             # 等待所有线程任务结束。
@@ -206,9 +205,8 @@ if __name__ == '__main__':
                 t.join()
 
             # batch_transforms
-            samples = randomShape(samples, context)
-            samples = normalizeImage(samples, context)
-            batch_image, batch_label, batch_gt_bbox = gt2YoloTarget(samples, context)
+            samples = padBatch(samples, context)
+            batch_image, batch_label, batch_gt_bbox = gt2FCOSTarget(samples, context)
 
             # 一些变换
             batch_image = batch_image.transpose(0, 3, 1, 2)
