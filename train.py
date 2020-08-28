@@ -50,9 +50,9 @@ if sysstr == 'Windows':
     torch.backends.cudnn.enabled = False
 
 
-def multi_thread_op(i, samples, decodeImage, context, train_dataset, with_mixup, mixupImage,
+def multi_thread_op(i, samples, decodeImage, context, with_mixup, mixupImage,
                      photometricDistort, randomFlipImage, normalizeImage, resizeImage, permute):
-    samples[i] = decodeImage(samples[i], context, train_dataset)
+    samples[i] = decodeImage(samples[i], context)
     if with_mixup:
         samples[i] = mixupImage(samples[i], context)
     samples[i] = photometricDistort(samples[i], context)
@@ -196,7 +196,7 @@ if __name__ == '__main__':
             # sample_transforms用多线程
             threads = []
             for i in range(batch_size):
-                t = threading.Thread(target=multi_thread_op, args=(i, samples, decodeImage, context, train_dataset, with_mixup, mixupImage,
+                t = threading.Thread(target=multi_thread_op, args=(i, samples, decodeImage, context, with_mixup, mixupImage,
                                                                    photometricDistort, randomFlipImage, normalizeImage, resizeImage, permute))
                 threads.append(t)
                 t.start()

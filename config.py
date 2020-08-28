@@ -34,9 +34,9 @@ class TrainConfig(object):
         # 模式。 0-从头训练，1-读取之前的模型继续训练（model_path可以是'yolov4.h5'、'./weights/step00001000.h5'这些。）
         self.pattern = 1
         self.lr = 0.0001
-        self.batch_size = 8
+        self.batch_size = 1
         # 如果self.pattern = 1，需要指定self.model_path表示从哪个模型读取权重继续训练。
-        self.model_path = 'pytorch_yolov4.pt'
+        self.model_path = 'fcos_r50_fpn_multiscale_2x.pt'
         # self.model_path = './weights/step00001000.pt'
 
         # ========= 一些设置 =========
