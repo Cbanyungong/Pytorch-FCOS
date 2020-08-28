@@ -87,19 +87,19 @@ if __name__ == '__main__':
     pattern = cfg.pattern
     if pattern == 1:
         # 加载参数, 跳过形状不匹配的。
-        yolo_state_dict = yolo.state_dict()
+        _state_dict = fcos.state_dict()
         pretrained_dict = torch.load(cfg.model_path)
         new_state_dict = OrderedDict()
         for k, v in pretrained_dict.items():
-            if k in yolo_state_dict:
-                shape_1 = yolo_state_dict[k].shape
+            if k in _state_dict:
+                shape_1 = _state_dict[k].shape
                 shape_2 = pretrained_dict[k].shape
                 if shape_1 == shape_2:
                     new_state_dict[k] = v
                 else:
                     print('shape mismatch in %s. shape_1=%s, while shape_2=%s.' % (k, shape_1, shape_2))
-        yolo_state_dict.update(new_state_dict)
-        yolo.load_state_dict(yolo_state_dict)
+        _state_dict.update(new_state_dict)
+        fcos.load_state_dict(_state_dict)
 
 
         strs = cfg.model_path.split('step')
@@ -107,19 +107,19 @@ if __name__ == '__main__':
             iter_id = int(strs[1][:8])
 
         # 冻结，使得需要的显存减少。6G的卡建议这样配置。11G的卡建议不冻结。
-        freeze_before = 'conv086'
-        for param in yolo.named_parameters():
-            if freeze_before in param[0]:
-                break
-            else:
-                print('freeze %s' % param[0])
-                param[1].requires_grad = False
+        # freeze_before = 'conv086'
+        # for param in yolo.named_parameters():
+        #     if freeze_before in param[0]:
+        #         break
+        #     else:
+        #         print('freeze %s' % param[0])
+        #         param[1].requires_grad = False
     elif pattern == 0:
         pass
 
 
     # 建立损失函数
-    fcos_loss = FCOSLoss(num_classes, cfg.iou_loss_thresh, _anchors)
+    fcos_loss = FCOSLoss(num_classes, cfg.iou_loss_thresh, 11111)
     if use_gpu:   # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里
         fcos = fcos.cuda()
         fcos_loss = fcos_loss.cuda()
@@ -151,26 +151,25 @@ if __name__ == '__main__':
     context = cfg.context
     # 预处理
     # sample_transforms
-    decodeImage = DecodeImage(with_mixup=with_mixup)   # 对图片解码。最开始的一步。
-    mixupImage = MixupImage()                   # mixup增强
-    photometricDistort = PhotometricDistort()   # 颜色扭曲
-    randomCrop = RandomCrop()                   # 随机裁剪
-    randomFlipImage = RandomFlipImage()         # 随机翻转
-    normalizeBox = NormalizeBox()               # 将物体的左上角坐标、右下角坐标中的横坐标/图片宽、纵坐标/图片高 以归一化坐标。
-    padBox = PadBox(cfg.num_max_boxes)          # 如果gt_bboxes的数量少于num_max_boxes，那么填充坐标是0的bboxes以凑够num_max_boxes。
-    bboxXYXY2XYWH = BboxXYXY2XYWH()             # sample['gt_bbox']被改写为cx_cy_w_h格式。
+    decodeImage = DecodeImage(to_rgb=cfg.di_to_rgb, with_mixup=with_mixup)   # 对图片解码。最开始的一步。
+    mixupImage = MixupImage()                      # mixup增强
+    photometricDistort = PhotometricDistort()      # 颜色扭曲
+    randomFlipImage = RandomFlipImage(prob=cfg.rfi_prob)        # 随机翻转
+    normalizeImage = NormalizeImage(is_channel_first=cfg.is_channel_first, is_scale=cfg.is_scale, mean=cfg.mean, std=cfg.std)     # 归一化
+    resizeImage = ResizeImage(target_size=cfg.target_size, max_size=cfg.max_size, interp=cfg.interp, use_cv2=cfg.use_cv2)         # xxx
+    permute = Permute(to_bgr=cfg.p_to_rgb, channel_first=cfg.channel_first)                         # xxx
     # batch_transforms
-    randomShape = RandomShape()                 # 多尺度训练。随机选一个尺度。也随机选一种插值方式。
-    normalizeImage = NormalizeImage(is_scale=True, is_channel_first=False)  # 图片归一化。直接除以255。
-    gt2YoloTarget = Gt2YoloTarget(cfg.anchors,
-                                  cfg.anchor_masks,
-                                  cfg.downsample_ratios,
-                                  num_classes)             # 填写target0、target1、target2张量。
+    padBatch = PadBatch(pad_to_stride=cfg.pad_to_stride,
+                        use_padded_im_info=cfg.use_padded_im_info)         # xxx
+    gt2FCOSTarget = Gt2FCOSTarget(object_sizes_boundary=cfg.object_sizes_boundary,
+                                  center_sampling_radius=cfg.center_sampling_radius,
+                                  downsample_ratios=cfg.downsample_ratios,
+                                  norm_reg_targets=cfg.norm_reg_targets)             # 填写target0、target1、target2张量。
 
     # 保存模型的目录
     if not os.path.exists('./weights'): os.mkdir('./weights')
 
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, yolo.parameters()), lr=cfg.lr)   # requires_grad==True 的参数才可以被更新
+    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, fcos.parameters()), lr=cfg.lr)   # requires_grad==True 的参数才可以被更新
 
     time_stat = deque(maxlen=20)
     start_time = time.time()

@@ -62,11 +62,34 @@ class TrainConfig(object):
         self.eval_batch_size = 4
 
 
-        # ============= 数据增强相关 =============
+        # ============= 预处理相关 =============
+        self.context = {'fields': ['image', 'im_info', 'fcos_target']}
+        # DecodeImage
+        self.di_to_rgb = True
         self.with_mixup = False
-        self.context = {'fields': ['image', 'gt_bbox', 'gt_class', 'gt_score']}
-        # PadBox
-        self.num_max_boxes = 70
+        # RandomFlipImage
+        self.rfi_prob = 0.5
+        # NormalizeImage
+        self.is_channel_first = False
+        self.is_scale = True
+        self.mean = [0.485, 0.456, 0.406]
+        self.std = [0.229, 0.224, 0.225]
+        # ResizeImage
+        self.target_size = [640, 672, 704, 736, 768, 800]
+        self.max_size = 1333
+        self.interp = 1
+        self.use_cv2 = True
+        # Permute
+        self.p_to_rgb = False
+        self.channel_first = True
+        # PadBatch
+        self.pad_to_stride = 128
+        self.use_padded_im_info = False
+        # Gt2FCOSTarget
+        self.object_sizes_boundary = [64, 128, 256, 512]
+        self.center_sampling_radius = 1.5
+        self.downsample_ratios = [8, 16, 32, 64, 128]
+        self.norm_reg_targets = True
 
 
 
