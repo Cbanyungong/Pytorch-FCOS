@@ -725,27 +725,27 @@ class ResizeImage(BaseOperator):
         im_size_max = np.max(im_shape[0:2])
         if isinstance(self.target_size, list):
             # Case for multi-scale training
-            selected_size = random.choice(self.target_size)
+            selected_size = random.choice(self.target_size)   # 随机选一个尺度
         else:
             selected_size = self.target_size
         if float(im_size_min) == 0:
             raise ZeroDivisionError('{}: min size of image is 0'.format(self))
         if self.max_size != 0:
-            im_scale = float(selected_size) / float(im_size_min)
+            im_scale = float(selected_size) / float(im_size_min)    # 短的边 缩放到选中的尺度
             # Prevent the biggest axis from being more than max_size
-            if np.round(im_scale * im_size_max) > self.max_size:
+            if np.round(im_scale * im_size_max) > self.max_size:    # 如果缩放后 长的边 超过了self.max_size=1333，那就改为将 长的边 缩放到self.max_size
                 im_scale = float(self.max_size) / float(im_size_max)
-            im_scale_x = im_scale
-            im_scale_y = im_scale
+            im_scale_x = im_scale   # 不破坏原始宽高比地缩放
+            im_scale_y = im_scale   # 不破坏原始宽高比地缩放
 
             resize_w = im_scale_x * float(im_shape[1])
             resize_h = im_scale_y * float(im_shape[0])
-            im_info = [resize_h, resize_w, im_scale]
+            im_info = [resize_h, resize_w, im_scale]   # 新的im_info
             if 'im_info' in sample and sample['im_info'][2] != 1.:
                 sample['im_info'] = np.append(
                     list(sample['im_info']), im_info).astype(np.float32)
             else:
-                sample['im_info'] = np.array(im_info).astype(np.float32)
+                sample['im_info'] = np.array(im_info).astype(np.float32)   # 修改sample['im_info']
         else:
             im_scale_x = float(selected_size) / float(im_shape[1])
             im_scale_y = float(selected_size) / float(im_shape[0])
@@ -845,12 +845,12 @@ class PadBatch(BaseOperator):
         if coarsest_stride == 0:
             return samples
         max_shape = np.array([data['image'].shape for data in samples]).max(
-            axis=0)
+            axis=0)    # max_shape=[3, max_h, max_w]
 
         if coarsest_stride > 0:
-            max_shape[1] = int(
+            max_shape[1] = int(   # max_h增加到最小的能被coarsest_stride=128整除的数
                 np.ceil(max_shape[1] / coarsest_stride) * coarsest_stride)
-            max_shape[2] = int(
+            max_shape[2] = int(   # max_w增加到最小的能被coarsest_stride=128整除的数
                 np.ceil(max_shape[2] / coarsest_stride) * coarsest_stride)
 
         padding_batch = []
@@ -859,7 +859,7 @@ class PadBatch(BaseOperator):
             im_c, im_h, im_w = im.shape[:]
             padding_im = np.zeros(
                 (im_c, max_shape[1], max_shape[2]), dtype=np.float32)
-            padding_im[:, :im_h, :im_w] = im
+            padding_im[:, :im_h, :im_w] = im    # im贴在padding_im的左上部分实现对齐
             data['image'] = padding_im
             if self.use_padded_im_info:
                 data['im_info'][:2] = max_shape[1:3]
@@ -904,6 +904,7 @@ class Gt2FCOSTarget(BaseOperator):
         :return: points from all feature map
         """
         locations = []
+        # 从小感受野stride=8遍历到大感受野stride=128。location.shape=[格子行数*格子列数, 2]，存放的是每个格子的中心点的坐标。格子顺序是第一行从左到右，第二行从左到右，...
         for stride in self.downsample_ratios:
             shift_x = np.arange(0, w, stride).astype(np.float32)
             shift_y = np.arange(0, h, stride).astype(np.float32)
@@ -912,7 +913,7 @@ class Gt2FCOSTarget(BaseOperator):
             shift_y = shift_y.flatten()
             location = np.stack([shift_x, shift_y], axis=1) + stride // 2
             locations.append(location)
-        num_points_each_level = [len(location) for location in locations]
+        num_points_each_level = [len(location) for location in locations]   # num_points_each_level=[stride=8感受野格子数, ..., stride=128感受野格子数]
         locations = np.concatenate(locations, axis=0)
         return locations, num_points_each_level
 
@@ -978,34 +979,36 @@ class Gt2FCOSTarget(BaseOperator):
             bboxes = sample['gt_bbox']
             gt_class = sample['gt_class']
             gt_score = sample['gt_score']
+            # bboxes的横坐标变成缩放后图片中对应物体的横坐标
             bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * np.floor(im_info[1]) / \
                 np.floor(im_info[1] / im_info[2])
+            # bboxes的纵坐标变成缩放后图片中对应物体的纵坐标
             bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * np.floor(im_info[0]) / \
                 np.floor(im_info[0] / im_info[2])
             # calculate the locations
-            h, w = sample['image'].shape[1:3]
-            points, num_points_each_level = self._compute_points(w, h)
+            h, w = sample['image'].shape[1:3]   # h w是这一批所有图片对齐后的高宽。
+            points, num_points_each_level = self._compute_points(w, h)   # points是所有格子中心点的坐标，num_points_each_level=[stride=8感受野格子数, ..., stride=128感受野格子数]
             object_scale_exp = []
-            for i, num_pts in enumerate(num_points_each_level):
-                object_scale_exp.append(
+            for i, num_pts in enumerate(num_points_each_level):   # 遍历每个感受野格子数
+                object_scale_exp.append(   # 边界self.object_sizes_of_interest[i] 重复 num_pts=格子数 次
                     np.tile(
                         np.array([self.object_sizes_of_interest[i]]),
                         reps=[num_pts, 1]))
             object_scale_exp = np.concatenate(object_scale_exp, axis=0)
 
-            gt_area = (bboxes[:, 2] - bboxes[:, 0]) * (
+            gt_area = (bboxes[:, 2] - bboxes[:, 0]) * (   # 所有gt的面积
                 bboxes[:, 3] - bboxes[:, 1])
-            xs, ys = points[:, 0], points[:, 1]
-            xs = np.reshape(xs, newshape=[xs.shape[0], 1])
-            xs = np.tile(xs, reps=[1, bboxes.shape[0]])
-            ys = np.reshape(ys, newshape=[ys.shape[0], 1])
-            ys = np.tile(ys, reps=[1, bboxes.shape[0]])
+            xs, ys = points[:, 0], points[:, 1]   # 所有格子中心点的横坐标、纵坐标
+            xs = np.reshape(xs, newshape=[xs.shape[0], 1])   # [所有格子数, 1]
+            xs = np.tile(xs, reps=[1, bboxes.shape[0]])      # [所有格子数, gt数]， 所有格子中心点的横坐标重复 gt数 次
+            ys = np.reshape(ys, newshape=[ys.shape[0], 1])   # [所有格子数, 1]
+            ys = np.tile(ys, reps=[1, bboxes.shape[0]])      # [所有格子数, gt数]， 所有格子中心点的纵坐标重复 gt数 次
 
-            l_res = xs - bboxes[:, 0]
-            r_res = bboxes[:, 2] - xs
-            t_res = ys - bboxes[:, 1]
-            b_res = bboxes[:, 3] - ys
-            reg_targets = np.stack([l_res, t_res, r_res, b_res], axis=2)
+            l_res = xs - bboxes[:, 0]   # [所有格子数, gt数] - [gt数, ] = [所有格子数, gt数]     结果是所有格子中心点的横坐标 分别减去 所有gt左上角的横坐标，即所有格子需要学习 gt数 个l
+            r_res = bboxes[:, 2] - xs   # 所有格子需要学习 gt数 个r
+            t_res = ys - bboxes[:, 1]   # 所有格子需要学习 gt数 个t
+            b_res = bboxes[:, 3] - ys   # 所有格子需要学习 gt数 个b
+            reg_targets = np.stack([l_res, t_res, r_res, b_res], axis=2)   # [所有格子数, gt数, 4]   所有格子需要学习 gt数 个lrtb
             if self.center_sampling_radius > 0:
                 is_inside_box = self._check_inside_boxes_limited(
                     bboxes, xs, ys, num_points_each_level)

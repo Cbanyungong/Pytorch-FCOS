@@ -154,12 +154,12 @@ if __name__ == '__main__':
     mixupImage = MixupImage()                      # mixup增强
     photometricDistort = PhotometricDistort()      # 颜色扭曲
     randomFlipImage = RandomFlipImage(prob=cfg.rfi_prob)        # 随机翻转
-    normalizeImage = NormalizeImage(is_channel_first=cfg.is_channel_first, is_scale=cfg.is_scale, mean=cfg.mean, std=cfg.std)     # 归一化
-    resizeImage = ResizeImage(target_size=cfg.target_size, max_size=cfg.max_size, interp=cfg.interp, use_cv2=cfg.use_cv2)         # xxx
-    permute = Permute(to_bgr=cfg.p_to_rgb, channel_first=cfg.channel_first)                         # xxx
+    normalizeImage = NormalizeImage(is_channel_first=cfg.is_channel_first, is_scale=cfg.is_scale, mean=cfg.mean, std=cfg.std)     # 先除以255归一化，再减均值除以标准差
+    resizeImage = ResizeImage(target_size=cfg.target_size, max_size=cfg.max_size, interp=cfg.interp, use_cv2=cfg.use_cv2)   # 多尺度训练，随机选一个尺度，不破坏原始宽高比地缩放。具体见代码。
+    permute = Permute(to_bgr=cfg.p_to_rgb, channel_first=cfg.channel_first)    # 图片从HWC格式变成CHW格式
     # batch_transforms
     padBatch = PadBatch(pad_to_stride=cfg.pad_to_stride,
-                        use_padded_im_info=cfg.use_padded_im_info)         # xxx
+                        use_padded_im_info=cfg.use_padded_im_info)    # 由于ResizeImage()的机制特殊，这一批所有的图片的尺度不一定全相等，所以这里对齐。
     gt2FCOSTarget = Gt2FCOSTarget(object_sizes_boundary=cfg.object_sizes_boundary,
                                   center_sampling_radius=cfg.center_sampling_radius,
                                   downsample_ratios=cfg.downsample_ratios,
@@ -206,7 +206,8 @@ if __name__ == '__main__':
 
             # batch_transforms
             samples = padBatch(samples, context)
-            batch_image, batch_label, batch_gt_bbox = gt2FCOSTarget(samples, context)
+            aaaaaaaaaaa = gt2FCOSTarget(samples, context)
+            print()
 
             # 一些变换
             batch_image = batch_image.transpose(0, 3, 1, 2)
