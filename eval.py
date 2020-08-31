@@ -39,10 +39,6 @@ if __name__ == '__main__':
     model_path = 'fcos_r50_fpn_multiscale_2x.pt'
     # model_path = './weights/step00001000.pt'
 
-    # input_shape越大，精度会上升，但速度会下降。
-    # input_shape = (320, 320)
-    # input_shape = (416, 416)
-    input_shape = (608, 608)
     # 验证时的分数阈值和nms_iou阈值
     conf_thresh = 0.025
     nms_thresh = 0.6
@@ -80,6 +76,6 @@ if __name__ == '__main__':
         for k in range(num_classes):
             _clsid2catid[k] = k
 
-    _decode = Decode(conf_thresh, nms_thresh, input_shape, fcos, all_classes, use_gpu)
+    _decode = Decode(conf_thresh, nms_thresh, fcos, all_classes, use_gpu)
     box_ap = eval(_decode, images, eval_pre_path, anno_file, eval_batch_size, _clsid2catid, draw_image)
 

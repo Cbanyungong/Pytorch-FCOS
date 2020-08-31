@@ -9,10 +9,9 @@ import numpy as np
 
 
 class Decode(object):
-    def __init__(self, obj_threshold, nms_threshold, input_shape, _fcos, all_classes, use_gpu):
+    def __init__(self, obj_threshold, nms_threshold, _fcos, all_classes, use_gpu):
         self._t1 = obj_threshold
         self._t2 = nms_threshold
-        self.input_shape = input_shape
         self.all_classes = all_classes
         self.num_classes = len(self.all_classes)
         self._fcos = _fcos

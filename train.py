@@ -81,7 +81,7 @@ if __name__ == '__main__':
     fcos_loss = FCOSLoss(**cfg.fcos_loss)
     head = FCOSHead(num_classes=num_classes, fcos_loss=fcos_loss)
     fcos = FCOS(resnet, fpn, head)
-    _decode = Decode(cfg.conf_thresh, cfg.nms_thresh, cfg.input_shape, fcos, class_names, use_gpu)
+    _decode = Decode(cfg.conf_thresh, cfg.nms_thresh, fcos, class_names, use_gpu)
 
     # 加载权重
     if cfg.model_path is not None:

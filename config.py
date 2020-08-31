@@ -33,7 +33,7 @@ class TrainConfig(object):
         self.batch_size = 1
         # self.model_path表示从哪个模型读取权重继续训练。
         self.model_path = 'fcos_r50_fpn_multiscale_2x.pt'
-        # self.model_path = './weights/step00001000.pt'
+        self.model_path = './weights/step00001100.pt'
 
         # ========= 一些设置 =========
         # 每隔几步保存一次模型
@@ -45,13 +45,9 @@ class TrainConfig(object):
 
 
         # 验证
-        # self.input_shape越大，精度会上升，但速度会下降。
-        # self.input_shape = (320, 320)
-        # self.input_shape = (416, 416)
-        self.input_shape = (608, 608)
         # 验证时的分数阈值和nms_iou阈值
-        self.conf_thresh = 0.001
-        self.nms_thresh = 0.45
+        self.conf_thresh = 0.025
+        self.nms_thresh = 0.6
         # 是否画出验证集图片
         self.draw_image = False
         # 验证时的批大小。由于太麻烦，暂时只支持1。

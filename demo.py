@@ -35,16 +35,11 @@ use_gpu = True
 
 
 if __name__ == '__main__':
-    # classes_path = 'data/voc_classes.txt'
-    classes_path = 'data/coco_classes.txt'
+    classes_path = 'data/voc_classes.txt'
+    # classes_path = 'data/coco_classes.txt'
     # model_path可以是'fcos_r50_fpn_multiscale_2x.pt'、'./weights/step00001000.pt'这些。
     model_path = 'fcos_r50_fpn_multiscale_2x.pt'
-    # model_path = './weights/step00001000.pt'
-
-    # input_shape越大，精度会上升，但速度会下降。
-    # input_shape = (320, 320)
-    input_shape = (416, 416)
-    # input_shape = (608, 608)
+    model_path = './weights/step00001100.pt'
 
     # 验证时的分数阈值和nms_iou阈值
     conf_thresh = 0.025
@@ -67,7 +62,7 @@ if __name__ == '__main__':
     fcos.load_state_dict(torch.load(model_path))
     fcos.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
 
-    _decode = Decode(conf_thresh, nms_thresh, input_shape, fcos, all_classes, use_gpu)
+    _decode = Decode(conf_thresh, nms_thresh, fcos, all_classes, use_gpu)
 
     if not os.path.exists('images/res/'): os.mkdir('images/res/')
 
