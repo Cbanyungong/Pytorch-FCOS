@@ -27,6 +27,12 @@ class ConvBlock(torch.nn.Module):
 
         self.act = torch.nn.ReLU()
 
+    def freeze(self):
+        self.conv1.freeze()
+        self.conv2.freeze()
+        self.conv3.freeze()
+        self.conv4.freeze()
+
     def forward(self, input_tensor):
         x = self.conv1(input_tensor)
         x = self.conv2(x)
@@ -47,6 +53,11 @@ class IdentityBlock(torch.nn.Module):
         self.conv3 = Conv2dUnit(filters2, filters3, 1, stride=1, bn=bn, gn=gn, af=af, act=None)
 
         self.act = torch.nn.ReLU()
+
+    def freeze(self):
+        self.conv1.freeze()
+        self.conv2.freeze()
+        self.conv3.freeze()
 
     def forward(self, input_tensor):
         x = self.conv1(input_tensor)
@@ -123,6 +134,29 @@ class Resnet(torch.nn.Module):
         else:
             layer = getattr(self, name)
         return layer
+
+    def freeze(self, freeze_at=2):
+        assert freeze_at in [1, 2, 3, 4, 5]
+        if freeze_at >= 1:
+            self.conv1.freeze()
+        if freeze_at >= 2:
+            self.stage2_0.freeze()
+            self.stage2_1.freeze()
+            self.stage2_2.freeze()
+        if freeze_at >= 3:
+            self.stage3_0.freeze()
+            self.stage3_1.freeze()
+            self.stage3_2.freeze()
+            self.stage3_3.freeze()
+        if freeze_at >= 4:
+            self.stage4_0.freeze()
+            for ly in self.stage4_layers:
+                ly.freeze()
+            self.stage4_last_layer.freeze()
+        if freeze_at >= 5:
+            self.stage5_0.freeze()
+            self.stage5_1.freeze()
+            self.stage5_2.freeze()
 
     def forward(self, input_tensor):
         x = self.conv1(input_tensor)

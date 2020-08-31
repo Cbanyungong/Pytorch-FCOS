@@ -105,14 +105,8 @@ if __name__ == '__main__':
         if len(strs) == 2:
             iter_id = int(strs[1][:8])
 
-        # 冻结，使得需要的显存减少。6G的卡建议这样配置。11G的卡建议不冻结。
-        # freeze_before = 'conv086'
-        # for param in yolo.named_parameters():
-        #     if freeze_before in param[0]:
-        #         break
-        #     else:
-        #         print('freeze %s' % param[0])
-        #         param[1].requires_grad = False
+        # 冻结，使得需要的显存减少。低显存的卡建议这样配置。
+        resnet.freeze(freeze_at=5)
 
 
     if use_gpu:   # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里

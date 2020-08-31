@@ -89,6 +89,21 @@ class Conv2dUnit(torch.nn.Module):
         elif act == 'mish':
             self.act = Mish()
 
+
+    def freeze(self):
+        self.conv.weight.requires_grad = False
+        if self.conv.bias:
+            self.conv.bias.requires_grad = False
+        if self.bn:
+            self.bn.weight.requires_grad = False
+            self.bn.bias.requires_grad = False
+        if self.gn:
+            self.gn.weight.requires_grad = False
+            self.gn.bias.requires_grad = False
+        if self.af:
+            self.af.weight.requires_grad = False
+            self.af.bias.requires_grad = False
+
     def forward(self, x):
         x = self.conv(x)
         if self.bn:
