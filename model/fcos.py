@@ -16,14 +16,14 @@ class FCOS(torch.nn.Module):
         self.neck = neck
         self.head = head
 
-    def forward(self, x, im_info, eval):
+    def forward(self, x, im_info, eval=True, tag_labels=None, tag_bboxes=None, tag_centerness=None):
         body_feats = self.backbone(x)
         body_feats, spatial_scale = self.neck(body_feats)
         if eval:
-            pred = self.head.get_prediction(body_feats, im_info)
+            out = self.head.get_prediction(body_feats, im_info)
         else:
-            pred = None
-        return pred
+            out = self.head.get_loss(body_feats, tag_labels, tag_bboxes, tag_centerness)
+        return out
 
 
 

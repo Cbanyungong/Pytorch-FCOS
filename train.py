@@ -78,7 +78,8 @@ if __name__ == '__main__':
     # 创建模型
     resnet = Resnet(50)
     fpn = FPN()
-    head = FCOSHead()
+    loss = FCOSLoss()
+    head = FCOSHead(fcos_loss=loss)
     fcos = FCOS(resnet, fpn, head)
     _decode = Decode(cfg.conf_thresh, cfg.nms_thresh, cfg.input_shape, fcos, class_names, use_gpu)
 
@@ -206,7 +207,98 @@ if __name__ == '__main__':
 
             # batch_transforms
             samples = padBatch(samples, context)
-            aaaaaaaaaaa = gt2FCOSTarget(samples, context)
+            samples = gt2FCOSTarget(samples, context)
+
+            # 整理成ndarray
+            batch_images = []
+            batch_labels0 = []
+            batch_reg_target0 = []
+            batch_centerness0 = []
+            batch_labels1 = []
+            batch_reg_target1 = []
+            batch_centerness1 = []
+            batch_labels2 = []
+            batch_reg_target2 = []
+            batch_centerness2 = []
+            batch_labels3 = []
+            batch_reg_target3 = []
+            batch_centerness3 = []
+            batch_labels4 = []
+            batch_reg_target4 = []
+            batch_centerness4 = []
+            for sample in samples:
+                im = sample['image']
+                batch_images.append(np.expand_dims(im, 0))
+
+                temp = sample['labels0']
+                batch_labels0.append(np.expand_dims(temp, 0))
+                temp = sample['reg_target0']
+                batch_reg_target0.append(np.expand_dims(temp, 0))
+                temp = sample['centerness0']
+                batch_centerness0.append(np.expand_dims(temp, 0))
+
+                temp = sample['labels1']
+                batch_labels1.append(np.expand_dims(temp, 0))
+                temp = sample['reg_target1']
+                batch_reg_target1.append(np.expand_dims(temp, 0))
+                temp = sample['centerness1']
+                batch_centerness1.append(np.expand_dims(temp, 0))
+
+                temp = sample['labels2']
+                batch_labels2.append(np.expand_dims(temp, 0))
+                temp = sample['reg_target2']
+                batch_reg_target2.append(np.expand_dims(temp, 0))
+                temp = sample['centerness2']
+                batch_centerness2.append(np.expand_dims(temp, 0))
+
+                temp = sample['labels3']
+                batch_labels3.append(np.expand_dims(temp, 0))
+                temp = sample['reg_target3']
+                batch_reg_target3.append(np.expand_dims(temp, 0))
+                temp = sample['centerness3']
+                batch_centerness3.append(np.expand_dims(temp, 0))
+
+                temp = sample['labels4']
+                batch_labels4.append(np.expand_dims(temp, 0))
+                temp = sample['reg_target4']
+                batch_reg_target4.append(np.expand_dims(temp, 0))
+                temp = sample['centerness4']
+                batch_centerness4.append(np.expand_dims(temp, 0))
+            batch_images = np.concatenate(batch_images, 0)
+            batch_labels0 = np.concatenate(batch_labels0, 0)
+            batch_reg_target0 = np.concatenate(batch_reg_target0, 0)
+            batch_centerness0 = np.concatenate(batch_centerness0, 0)
+            batch_labels1 = np.concatenate(batch_labels1, 0)
+            batch_reg_target1 = np.concatenate(batch_reg_target1, 0)
+            batch_centerness1 = np.concatenate(batch_centerness1, 0)
+            batch_labels2 = np.concatenate(batch_labels2, 0)
+            batch_reg_target2 = np.concatenate(batch_reg_target2, 0)
+            batch_centerness2 = np.concatenate(batch_centerness2, 0)
+            batch_labels3 = np.concatenate(batch_labels3, 0)
+            batch_reg_target3 = np.concatenate(batch_reg_target3, 0)
+            batch_centerness3 = np.concatenate(batch_centerness3, 0)
+            batch_labels4 = np.concatenate(batch_labels4, 0)
+            batch_reg_target4 = np.concatenate(batch_reg_target4, 0)
+            batch_centerness4 = np.concatenate(batch_centerness4, 0)
+
+            dic = {}
+            dic['batch_images'] = batch_images
+            dic['batch_labels0'] = batch_labels0
+            dic['batch_reg_target0'] = batch_reg_target0
+            dic['batch_centerness0'] = batch_centerness0
+            dic['batch_labels1'] = batch_labels1
+            dic['batch_reg_target1'] = batch_reg_target1
+            dic['batch_centerness1'] = batch_centerness1
+            dic['batch_labels2'] = batch_labels2
+            dic['batch_reg_target2'] = batch_reg_target2
+            dic['batch_centerness2'] = batch_centerness2
+            dic['batch_labels3'] = batch_labels3
+            dic['batch_reg_target3'] = batch_reg_target3
+            dic['batch_centerness3'] = batch_centerness3
+            dic['batch_labels4'] = batch_labels4
+            dic['batch_reg_target4'] = batch_reg_target4
+            dic['batch_centerness4'] = batch_centerness4
+            np.savez('data', **dic)
             print()
 
             # 一些变换

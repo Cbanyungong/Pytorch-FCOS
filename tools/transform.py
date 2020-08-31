@@ -941,31 +941,32 @@ class Gt2FCOSTarget(BaseOperator):
         :param ys: vertical coordinate of points
         :return: the mask of points is within gt_box or not
         """
-        bboxes = np.reshape(
+        bboxes = np.reshape(   # [gt数, 4] -> [1, gt数, 4]
             gt_bbox, newshape=[1, gt_bbox.shape[0], gt_bbox.shape[1]])
-        bboxes = np.tile(bboxes, reps=[xs.shape[0], 1, 1])
-        ct_x = (bboxes[:, :, 0] + bboxes[:, :, 2]) / 2
-        ct_y = (bboxes[:, :, 1] + bboxes[:, :, 3]) / 2
-        beg = 0
-        clipped_box = bboxes.copy()
-        for lvl, stride in enumerate(self.downsample_ratios):
-            end = beg + num_points_each_level[lvl]
-            stride_exp = self.center_sampling_radius * stride
+        bboxes = np.tile(bboxes, reps=[xs.shape[0], 1, 1])   # [所有格子数, gt数, 4]   gt坐标
+        ct_x = (bboxes[:, :, 0] + bboxes[:, :, 2]) / 2       # [所有格子数, gt数]      gt中心点x
+        ct_y = (bboxes[:, :, 1] + bboxes[:, :, 3]) / 2       # [所有格子数, gt数]      gt中心点y
+        beg = 0   # 开始=0
+        clipped_box = bboxes.copy()   # [所有格子数, gt数, 4]   gt坐标，限制gt的边长，最大只能是1.5 * 2 = 3个格子边长
+        for lvl, stride in enumerate(self.downsample_ratios):   # 遍历每个感受野，从 stride=8的感受野 到 stride=128的感受野
+            end = beg + num_points_each_level[lvl]   # 结束=开始+这个感受野的格子数
+            stride_exp = self.center_sampling_radius * stride   # stride_exp = 1.5 * 这个感受野的stride(的格子边长)
             clipped_box[beg:end, :, 0] = np.maximum(
-                bboxes[beg:end, :, 0], ct_x[beg:end, :] - stride_exp)
+                bboxes[beg:end, :, 0], ct_x[beg:end, :] - stride_exp)   # 限制gt的边长，最大只能是1.5 * 2 = 3个格子边长
             clipped_box[beg:end, :, 1] = np.maximum(
-                bboxes[beg:end, :, 1], ct_y[beg:end, :] - stride_exp)
+                bboxes[beg:end, :, 1], ct_y[beg:end, :] - stride_exp)   # 限制gt的边长，最大只能是1.5 * 2 = 3个格子边长
             clipped_box[beg:end, :, 2] = np.minimum(
-                bboxes[beg:end, :, 2], ct_x[beg:end, :] + stride_exp)
+                bboxes[beg:end, :, 2], ct_x[beg:end, :] + stride_exp)   # 限制gt的边长，最大只能是1.5 * 2 = 3个格子边长
             clipped_box[beg:end, :, 3] = np.minimum(
-                bboxes[beg:end, :, 3], ct_y[beg:end, :] + stride_exp)
+                bboxes[beg:end, :, 3], ct_y[beg:end, :] + stride_exp)   # 限制gt的边长，最大只能是1.5 * 2 = 3个格子边长
             beg = end
-        l_res = xs - clipped_box[:, :, 0]
-        r_res = clipped_box[:, :, 2] - xs
-        t_res = ys - clipped_box[:, :, 1]
-        b_res = clipped_box[:, :, 3] - ys
-        clipped_box_reg_targets = np.stack([l_res, t_res, r_res, b_res], axis=2)
-        inside_gt_box = np.min(clipped_box_reg_targets, axis=2) > 0
+        # xs  [所有格子数, gt数]， 所有格子中心点的横坐标重复 gt数 次
+        l_res = xs - clipped_box[:, :, 0]   # [所有格子数, gt数]  所有格子需要学习 gt数 个l
+        r_res = clipped_box[:, :, 2] - xs   # [所有格子数, gt数]  所有格子需要学习 gt数 个r
+        t_res = ys - clipped_box[:, :, 1]   # [所有格子数, gt数]  所有格子需要学习 gt数 个t
+        b_res = clipped_box[:, :, 3] - ys   # [所有格子数, gt数]  所有格子需要学习 gt数 个b
+        clipped_box_reg_targets = np.stack([l_res, t_res, r_res, b_res], axis=2)   # [所有格子数, gt数, 4]  所有格子需要学习 gt数 个lrtb
+        inside_gt_box = np.min(clipped_box_reg_targets, axis=2) > 0   # [所有格子数, gt数]  需要学习的lrtb如果都>0，表示格子被选中。即只选取中心点落在gt内的格子。
         return inside_gt_box
 
     def __call__(self, samples, context=None):
@@ -996,7 +997,7 @@ class Gt2FCOSTarget(BaseOperator):
                         reps=[num_pts, 1]))
             object_scale_exp = np.concatenate(object_scale_exp, axis=0)
 
-            gt_area = (bboxes[:, 2] - bboxes[:, 0]) * (   # 所有gt的面积
+            gt_area = (bboxes[:, 2] - bboxes[:, 0]) * (      # [gt数, ]   所有gt的面积
                 bboxes[:, 3] - bboxes[:, 1])
             xs, ys = points[:, 0], points[:, 1]   # 所有格子中心点的横坐标、纵坐标
             xs = np.reshape(xs, newshape=[xs.shape[0], 1])   # [所有格子数, 1]
@@ -1010,68 +1011,80 @@ class Gt2FCOSTarget(BaseOperator):
             b_res = bboxes[:, 3] - ys   # 所有格子需要学习 gt数 个b
             reg_targets = np.stack([l_res, t_res, r_res, b_res], axis=2)   # [所有格子数, gt数, 4]   所有格子需要学习 gt数 个lrtb
             if self.center_sampling_radius > 0:
+                # [所有格子数, gt数]    True表示格子中心点（锚点）落在gt内（gt是被限制边长后的gt）。
+                # FCOS首先将gt框内的锚点（格子中心点）视为候选正样本，然后根据为每个金字塔等级定义的比例范围从候选中选择最终的正样本（而且是负责预测gt里面积最小的），最后那些未选择的锚点为负样本。
+                # (1)第1个正负样本判断依据
                 is_inside_box = self._check_inside_boxes_limited(
                     bboxes, xs, ys, num_points_each_level)
             else:
+                # [所有格子数, gt数]    True表示格子中心点（锚点）落在gt内。
+                # FCOS首先将gt框内的锚点（格子中心点）视为候选正样本，然后根据为每个金字塔等级定义的比例范围从候选中选择最终的正样本（而且是负责预测gt里面积最小的），最后那些未选择的锚点为负样本。
+                # (1)第1个正负样本判断依据
                 is_inside_box = np.min(reg_targets, axis=2) > 0
             # check if the targets is inside the corresponding level
-            max_reg_targets = np.max(reg_targets, axis=2)
-            lower_bound = np.tile(
+            max_reg_targets = np.max(reg_targets, axis=2)    # [所有格子数, gt数]   所有格子需要学习 gt数 个lrtb   中的最大值
+            lower_bound = np.tile(    # [所有格子数, gt数]   下限重复 gt数 次
                 np.expand_dims(
                     object_scale_exp[:, 0], axis=1),
                 reps=[1, max_reg_targets.shape[1]])
-            high_bound = np.tile(
+            high_bound = np.tile(     # [所有格子数, gt数]   上限重复 gt数 次
                 np.expand_dims(
                     object_scale_exp[:, 1], axis=1),
                 reps=[1, max_reg_targets.shape[1]])
+
+            # [所有格子数, gt数]   最大回归值如果位于区间内，就为True
+            # (2)第2个正负样本判断依据
             is_match_current_level = \
                 (max_reg_targets > lower_bound) & \
                 (max_reg_targets < high_bound)
+            # [所有格子数, gt数]   所有gt的面积
             points2gtarea = np.tile(
                 np.expand_dims(
                     gt_area, axis=0), reps=[xs.shape[0], 1])
-            points2gtarea[is_inside_box == 0] = self.INF
-            points2gtarea[is_match_current_level == 0] = self.INF
-            points2min_area = points2gtarea.min(axis=1)
-            points2min_area_ind = points2gtarea.argmin(axis=1)
-            labels = gt_class[points2min_area_ind] + 1
-            labels[points2min_area == self.INF] = 0
-            reg_targets = reg_targets[range(xs.shape[0]), points2min_area_ind]
+            points2gtarea[is_inside_box == 0] = self.INF            # 格子中心点落在gt外的（即负样本），需要学习的面积置为无穷。     这是为了points2gtarea.min(axis=1)时，若某格子有最终正样本，那么就应该不让负样本的面积影响到判断。
+            points2gtarea[is_match_current_level == 0] = self.INF   # 最大回归值如果位于区间外（即负样本），需要学习的面积置为无穷。 这是为了points2gtarea.min(axis=1)时，若某格子有最终正样本，那么就应该不让负样本的面积影响到判断。
+            points2min_area = points2gtarea.min(axis=1)          # [所有格子数, ]   所有格子需要学习 gt数 个面积  中的最小值
+            points2min_area_ind = points2gtarea.argmin(axis=1)   # [所有格子数, ]   所有格子需要学习 gt数 个面积  中的最小值的下标
+            labels = gt_class[points2min_area_ind] + 1     # [所有格子数, 1]   所有格子需要学习 的类别id，学习的是gt中面积最小值的的类别id
+            labels[points2min_area == self.INF] = 0        # [所有格子数, 1]   负样本的points2min_area肯定是self.INF，这里将负样本需要学习 的类别id 置为0
+            reg_targets = reg_targets[range(xs.shape[0]), points2min_area_ind]   # [所有格子数, 4]   所有格子需要学习 的 lrtb（负责预测gt里面积最小的）
             ctn_targets = np.sqrt((reg_targets[:, [0, 2]].min(axis=1) / \
                                   reg_targets[:, [0, 2]].max(axis=1)) * \
                                   (reg_targets[:, [1, 3]].min(axis=1) / \
-                                   reg_targets[:, [1, 3]].max(axis=1))).astype(np.float32)
+                                   reg_targets[:, [1, 3]].max(axis=1))).astype(np.float32)   # [所有格子数, ]  所有格子需要学习的centerness
             ctn_targets = np.reshape(
-                ctn_targets, newshape=[ctn_targets.shape[0], 1])
-            ctn_targets[labels <= 0] = 0
-            pos_ind = np.nonzero(labels != 0)
-            reg_targets_pos = reg_targets[pos_ind[0], :]
-            split_sections = []
+                ctn_targets, newshape=[ctn_targets.shape[0], 1])   # [所有格子数, 1]  所有格子需要学习的centerness
+            ctn_targets[labels <= 0] = 0   # 负样本需要学习的centerness置为0
+            pos_ind = np.nonzero(labels != 0)   # tuple=( ndarray(shape=[正样本数, ]), ndarray(shape=[正样本数, ]) )   即正样本在labels中的下标，因为labels是2维的，所以一个正样本有2个下标。
+            reg_targets_pos = reg_targets[pos_ind[0], :]    # [正样本数, 4]   正样本格子需要学习 的 lrtb
+            split_sections = []   # 每一个感受野 最后一个格子 在reg_targets中的位置（第一维的位置）
             beg = 0
             for lvl in range(len(num_points_each_level)):
                 end = beg + num_points_each_level[lvl]
                 split_sections.append(end)
                 beg = end
-            labels_by_level = np.split(labels, split_sections, axis=0)
-            reg_targets_by_level = np.split(reg_targets, split_sections, axis=0)
-            ctn_targets_by_level = np.split(ctn_targets, split_sections, axis=0)
+            labels_by_level = np.split(labels, split_sections, axis=0)             # 一个list，根据split_sections切分，各个感受野的target切分开来。
+            reg_targets_by_level = np.split(reg_targets, split_sections, axis=0)   # 一个list，根据split_sections切分，各个感受野的target切分开来。
+            ctn_targets_by_level = np.split(ctn_targets, split_sections, axis=0)   # 一个list，根据split_sections切分，各个感受野的target切分开来。
+
+            # 最后一步是reshape，和格子的位置对应上。
             for lvl in range(len(self.downsample_ratios)):
-                grid_w = int(np.ceil(w / self.downsample_ratios[lvl]))
-                grid_h = int(np.ceil(h / self.downsample_ratios[lvl]))
-                if self.norm_reg_targets:
+                grid_w = int(np.ceil(w / self.downsample_ratios[lvl]))   # 格子列数
+                grid_h = int(np.ceil(h / self.downsample_ratios[lvl]))   # 格子行数
+                if self.norm_reg_targets:   # 是否将reg目标归一化，配置里是True
                     sample['reg_target{}'.format(lvl)] = \
                         np.reshape(
                             reg_targets_by_level[lvl] / \
-                            self.downsample_ratios[lvl],
-                            newshape=[grid_h, grid_w, 4])
+                            self.downsample_ratios[lvl],      # 归一化方式是除以格子边长（即下采样倍率）
+                            newshape=[grid_h, grid_w, 4])     # reshape成[grid_h, grid_w, 4]
                 else:
                     sample['reg_target{}'.format(lvl)] = np.reshape(
                         reg_targets_by_level[lvl],
                         newshape=[grid_h, grid_w, 4])
                 sample['labels{}'.format(lvl)] = np.reshape(
-                    labels_by_level[lvl], newshape=[grid_h, grid_w, 1])
+                    labels_by_level[lvl], newshape=[grid_h, grid_w, 1])     # reshape成[grid_h, grid_w, 1]
                 sample['centerness{}'.format(lvl)] = np.reshape(
-                    ctn_targets_by_level[lvl], newshape=[grid_h, grid_w, 1])
+                    ctn_targets_by_level[lvl], newshape=[grid_h, grid_w, 1])     # reshape成[grid_h, grid_w, 1]
         return samples
 
 
