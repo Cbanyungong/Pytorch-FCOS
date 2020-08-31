@@ -288,7 +288,7 @@ if __name__ == '__main__':
             batch_reg_target4 = torch.Tensor(batch_reg_target4)
             batch_centerness4 = torch.Tensor(batch_centerness4)
             if use_gpu:
-                batch_image = batch_image.cuda()
+                batch_images = batch_images.cuda()
                 batch_labels0 = batch_labels0.cuda()
                 batch_reg_target0 = batch_reg_target0.cuda()
                 batch_centerness0 = batch_centerness0.cuda()
@@ -307,7 +307,7 @@ if __name__ == '__main__':
             tag_labels = [batch_labels0, batch_labels1, batch_labels2, batch_labels3, batch_labels4]
             tag_bboxes = [batch_reg_target0, batch_reg_target1, batch_reg_target2, batch_reg_target3, batch_reg_target4]
             tag_center = [batch_centerness0, batch_centerness1, batch_centerness2, batch_centerness3, batch_centerness4]
-            losses = fcos(batch_image, None, eval=False, tag_labels=tag_labels, tag_bboxes=tag_bboxes, tag_centerness=tag_center)
+            losses = fcos(batch_images, None, eval=False, tag_labels=tag_labels, tag_bboxes=tag_bboxes, tag_centerness=tag_center)
             loss_centerness = losses['loss_centerness']
             loss_cls = losses['loss_cls']
             loss_box = losses['loss_box']
