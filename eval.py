@@ -67,7 +67,7 @@ if __name__ == '__main__':
 
     resnet = Resnet(50)
     fpn = FPN()
-    head = FCOSHead()
+    head = FCOSHead(num_classes=num_classes)
     fcos = FCOS(resnet, fpn, head)
     if use_gpu:
         fcos = fcos.cuda()

@@ -54,8 +54,8 @@ class TrainConfig(object):
         self.nms_thresh = 0.45
         # 是否画出验证集图片
         self.draw_image = False
-        # 验证时的批大小
-        self.eval_batch_size = 4
+        # 验证时的批大小。由于太麻烦，暂时只支持1。
+        self.eval_batch_size = 1
 
 
         # ============= 模型相关 =============
