@@ -178,7 +178,7 @@ class FCOSLoss(torch.nn.Module):
         mask_positive_float = mask_positive.float()   # [批大小*所有格子数,  1]， 正样本处为1
         num_positive_fp32 = mask_positive_float.sum()   # 这一批的正样本数
         normalize_sum = tag_center_flatten + 0
-        normalize_sum = (mask_positive_float * normalize_sum).sum()
+        normalize_sum = (mask_positive_float * normalize_sum).sum()   # 正样本的centerness求和
 
         cls_loss = self.sigmoid_focal_loss(cls_logits_flatten, tag_labels_flatten, num_positive_fp32, gamma=self.loss_gamma, alpha=self.loss_alpha)
         reg_loss = self.__iou_loss(bboxes_reg_flatten, tag_bboxes_flatten, mask_positive_float, tag_center_flatten) * mask_positive_float / (normalize_sum + 1e-9)
