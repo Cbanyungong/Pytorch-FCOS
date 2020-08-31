@@ -62,34 +62,57 @@ class TrainConfig(object):
         self.eval_batch_size = 4
 
 
+        # ============= 模型相关 =============
+        self.fcos_loss = dict(
+            loss_alpha=0.25,
+            loss_gamma=2.0,
+            iou_loss_type='giou',  # linear_iou/giou/iou
+            reg_weights=1.0,
+        )
+
+
         # ============= 预处理相关 =============
         self.context = {'fields': ['image', 'im_info', 'fcos_target']}
         # DecodeImage
-        self.di_to_rgb = True
-        self.with_mixup = False
+        self.decodeImage = dict(
+            to_rgb=True,
+            with_mixup=False,
+        )
         # RandomFlipImage
-        self.rfi_prob = 0.5
+        self.randomFlipImage = dict(
+            prob=0.5,
+        )
         # NormalizeImage
-        self.is_channel_first = False
-        self.is_scale = True
-        self.mean = [0.485, 0.456, 0.406]
-        self.std = [0.229, 0.224, 0.225]
+        self.normalizeImage = dict(
+            is_channel_first=False,
+            is_scale=True,
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+        )
         # ResizeImage
-        self.target_size = [640, 672, 704, 736, 768, 800]
-        self.max_size = 1333
-        self.interp = 1
-        self.use_cv2 = True
+        self.resizeImage = dict(
+            target_size=[640, 672, 704, 736, 768, 800],
+            max_size=1333,
+            interp=1,
+            use_cv2=True,
+        )
         # Permute
-        self.p_to_rgb = False
-        self.channel_first = True
+        self.permute = dict(
+            to_bgr=False,
+            channel_first=True,
+        )
         # PadBatch
-        self.pad_to_stride = 128
-        self.use_padded_im_info = False
+        self.padBatch = dict(
+            pad_to_stride=128,
+            use_padded_im_info=False,
+        )
         # Gt2FCOSTarget
-        self.object_sizes_boundary = [64, 128, 256, 512]
-        self.center_sampling_radius = 1.5
-        self.downsample_ratios = [8, 16, 32, 64, 128]
-        self.norm_reg_targets = True
+        self.gt2FCOSTarget = dict(
+            object_sizes_boundary=[64, 128, 256, 512],
+            center_sampling_radius=1.5,
+            downsample_ratios=[8, 16, 32, 64, 128],
+            norm_reg_targets=True,
+        )
 
 
 

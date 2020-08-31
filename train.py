@@ -78,7 +78,7 @@ if __name__ == '__main__':
     # 创建模型
     resnet = Resnet(50)
     fpn = FPN()
-    loss = FCOSLoss()
+    loss = FCOSLoss(**cfg.fcos_loss)
     head = FCOSHead(fcos_loss=loss)
     fcos = FCOS(resnet, fpn, head)
     _decode = Decode(cfg.conf_thresh, cfg.nms_thresh, cfg.input_shape, fcos, class_names, use_gpu)
@@ -147,24 +147,20 @@ if __name__ == '__main__':
             val_images = dataset['images']
 
     batch_size = cfg.batch_size
-    with_mixup = cfg.with_mixup
+    with_mixup = cfg.decodeImage['with_mixup']
     context = cfg.context
     # 预处理
     # sample_transforms
-    decodeImage = DecodeImage(to_rgb=cfg.di_to_rgb, with_mixup=with_mixup)   # 对图片解码。最开始的一步。
+    decodeImage = DecodeImage(**cfg.decodeImage)   # 对图片解码。最开始的一步。
     mixupImage = MixupImage()                      # mixup增强
     photometricDistort = PhotometricDistort()      # 颜色扭曲
-    randomFlipImage = RandomFlipImage(prob=cfg.rfi_prob)        # 随机翻转
-    normalizeImage = NormalizeImage(is_channel_first=cfg.is_channel_first, is_scale=cfg.is_scale, mean=cfg.mean, std=cfg.std)     # 先除以255归一化，再减均值除以标准差
-    resizeImage = ResizeImage(target_size=cfg.target_size, max_size=cfg.max_size, interp=cfg.interp, use_cv2=cfg.use_cv2)   # 多尺度训练，随机选一个尺度，不破坏原始宽高比地缩放。具体见代码。
-    permute = Permute(to_bgr=cfg.p_to_rgb, channel_first=cfg.channel_first)    # 图片从HWC格式变成CHW格式
+    randomFlipImage = RandomFlipImage(**cfg.randomFlipImage)  # 随机翻转
+    normalizeImage = NormalizeImage(**cfg.normalizeImage)     # 先除以255归一化，再减均值除以标准差
+    resizeImage = ResizeImage(**cfg.resizeImage)   # 多尺度训练，随机选一个尺度，不破坏原始宽高比地缩放。具体见代码。
+    permute = Permute(**cfg.permute)    # 图片从HWC格式变成CHW格式
     # batch_transforms
-    padBatch = PadBatch(pad_to_stride=cfg.pad_to_stride,
-                        use_padded_im_info=cfg.use_padded_im_info)    # 由于ResizeImage()的机制特殊，这一批所有的图片的尺度不一定全相等，所以这里对齐。
-    gt2FCOSTarget = Gt2FCOSTarget(object_sizes_boundary=cfg.object_sizes_boundary,
-                                  center_sampling_radius=cfg.center_sampling_radius,
-                                  downsample_ratios=cfg.downsample_ratios,
-                                  norm_reg_targets=cfg.norm_reg_targets)             # 填写target0、target1、target2张量。
+    padBatch = PadBatch(**cfg.padBatch)    # 由于ResizeImage()的机制特殊，这一批所有的图片的尺度不一定全相等，所以这里对齐。
+    gt2FCOSTarget = Gt2FCOSTarget(**cfg.gt2FCOSTarget)   # 填写target张量。
 
     # 保存模型的目录
     if not os.path.exists('./weights'): os.mkdir('./weights')
