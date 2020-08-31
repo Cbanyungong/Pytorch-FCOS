@@ -61,6 +61,21 @@ def multi_thread_op(i, samples, decodeImage, context, with_mixup, mixupImage,
     samples[i] = resizeImage(samples[i], context)
     samples[i] = permute(samples[i], context)
 
+def load_weights(model, model_path):
+    _state_dict = model.state_dict()
+    pretrained_dict = torch.load(model_path)
+    new_state_dict = OrderedDict()
+    for k, v in pretrained_dict.items():
+        if k in _state_dict:
+            shape_1 = _state_dict[k].shape
+            shape_2 = pretrained_dict[k].shape
+            if shape_1 == shape_2:
+                new_state_dict[k] = v
+            else:
+                print('shape mismatch in %s. shape_1=%s, while shape_2=%s.' % (k, shape_1, shape_2))
+    _state_dict.update(new_state_dict)
+    model.load_state_dict(_state_dict)
+
 
 use_gpu = False
 use_gpu = True
@@ -86,20 +101,7 @@ if __name__ == '__main__':
     # 加载权重
     if cfg.model_path is not None:
         # 加载参数, 跳过形状不匹配的。
-        _state_dict = fcos.state_dict()
-        pretrained_dict = torch.load(cfg.model_path)
-        new_state_dict = OrderedDict()
-        for k, v in pretrained_dict.items():
-            if k in _state_dict:
-                shape_1 = _state_dict[k].shape
-                shape_2 = pretrained_dict[k].shape
-                if shape_1 == shape_2:
-                    new_state_dict[k] = v
-                else:
-                    print('shape mismatch in %s. shape_1=%s, while shape_2=%s.' % (k, shape_1, shape_2))
-        _state_dict.update(new_state_dict)
-        fcos.load_state_dict(_state_dict)
-
+        load_weights(fcos, cfg.model_path)
 
         strs = cfg.model_path.split('step')
         if len(strs) == 2:
