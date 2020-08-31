@@ -16,7 +16,7 @@ from model.custom_layers import Conv2dUnit
 
 class FCOSHead(torch.nn.Module):
     def __init__(self,
-                 num_classes=80,
+                 num_classes,
                  fpn_stride=[8, 16, 32, 64, 128],
                  prior_prob=0.01,
                  num_convs=4,

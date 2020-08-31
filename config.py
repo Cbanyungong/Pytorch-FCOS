@@ -15,18 +15,18 @@ class TrainConfig(object):
     """
     def __init__(self):
         # 自定义数据集
-        # self.train_path = 'annotation_json/voc2012_train.json'
-        # self.val_path = 'annotation_json/voc2012_val.json'
-        # self.classes_path = 'data/voc_classes.txt'
-        # self.train_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'   # 训练集图片相对路径
-        # self.val_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'     # 验证集图片相对路径
+        self.train_path = 'annotation_json/voc2012_train.json'
+        self.val_path = 'annotation_json/voc2012_val.json'
+        self.classes_path = 'data/voc_classes.txt'
+        self.train_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'   # 训练集图片相对路径
+        self.val_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'     # 验证集图片相对路径
 
         # COCO数据集
-        self.train_path = '../COCO/annotations/instances_train2017.json'
-        self.val_path = '../COCO/annotations/instances_val2017.json'
-        self.classes_path = 'data/coco_classes.txt'
-        self.train_pre_path = '../COCO/train2017/'  # 训练集图片相对路径
-        self.val_pre_path = '../COCO/val2017/'  # 验证集图片相对路径
+        # self.train_path = '../COCO/annotations/instances_train2017.json'
+        # self.val_path = '../COCO/annotations/instances_val2017.json'
+        # self.classes_path = 'data/coco_classes.txt'
+        # self.train_pre_path = '../COCO/train2017/'  # 训练集图片相对路径
+        # self.val_pre_path = '../COCO/val2017/'  # 验证集图片相对路径
 
 
         self.lr = 0.0001

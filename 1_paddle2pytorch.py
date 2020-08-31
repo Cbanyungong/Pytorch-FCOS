@@ -20,7 +20,7 @@ from model.resnet import Resnet
 
 resnet = Resnet(50)
 fpn = FPN()
-head = FCOSHead()
+head = FCOSHead(num_classes=80)
 fcos = FCOS(resnet, fpn, head)
 
 

@@ -79,7 +79,7 @@ if __name__ == '__main__':
     resnet = Resnet(50)
     fpn = FPN()
     fcos_loss = FCOSLoss(**cfg.fcos_loss)
-    head = FCOSHead(fcos_loss=fcos_loss)
+    head = FCOSHead(num_classes=num_classes, fcos_loss=fcos_loss)
     fcos = FCOS(resnet, fpn, head)
     _decode = Decode(cfg.conf_thresh, cfg.nms_thresh, cfg.input_shape, fcos, class_names, use_gpu)
 
