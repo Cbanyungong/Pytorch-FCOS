@@ -66,8 +66,10 @@ class FCOSHead(torch.nn.Module):
                 reg_conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
                 reg_convs_this_feature.append(reg_conv_layer)
 
-            # 类别分支最后的卷积
+            # 类别分支最后的卷积。设置偏移的初始值使得各类别预测概率初始值为self.prior_prob (根据激活函数是sigmoid()时推导出，和RetinaNet中一样)
+            bias_init_value = -math.log((1 - self.prior_prob) / self.prior_prob)
             cls_last_conv_layer = Conv2dUnit(256, self.num_classes, 3, stride=1, bias_attr=True, act=None)
+            torch.nn.init.constant_(cls_last_conv_layer.conv.bias, bias_init_value)
             # 坐标分支最后的卷积
             reg_last_conv_layer = Conv2dUnit(256, 4, 3, stride=1, bias_attr=True, act=None)
             # centerness分支
