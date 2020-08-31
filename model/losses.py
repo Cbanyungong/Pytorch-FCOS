@@ -8,219 +8,189 @@
 #
 # ================================================================
 import torch
-import torch as T
-import math
 import numpy as np
 
-def bbox_ciou(boxes1, boxes2):
-    '''
-    计算ciou = iou - p2/c2 - av
-    :param boxes1: (8, 13, 13, 3, 4)   pred_xywh
-    :param boxes2: (8, 13, 13, 3, 4)   label_xywh
-    :return:
-
-    举例时假设pred_xywh和label_xywh的shape都是(1, 4)
-    '''
-
-    # 变成左上角坐标、右下角坐标
-    boxes1_x0y0x1y1 = T.cat((boxes1[..., :2] - boxes1[..., 2:] * 0.5,
-                             boxes1[..., :2] + boxes1[..., 2:] * 0.5), dim=-1)
-    boxes2_x0y0x1y1 = T.cat((boxes2[..., :2] - boxes2[..., 2:] * 0.5,
-                             boxes2[..., :2] + boxes2[..., 2:] * 0.5), dim=-1)
-    '''
-    逐个位置比较boxes1_x0y0x1y1[..., :2]和boxes1_x0y0x1y1[..., 2:]，即逐个位置比较[x0, y0]和[x1, y1]，小的留下。
-    比如留下了[x0, y0]
-    这一步是为了避免一开始w h 是负数，导致x0y0成了右下角坐标，x1y1成了左上角坐标。
-    '''
-    boxes1_x0y0x1y1 = T.cat((T.min(boxes1_x0y0x1y1[..., :2], boxes1_x0y0x1y1[..., 2:]),
-                             T.max(boxes1_x0y0x1y1[..., :2], boxes1_x0y0x1y1[..., 2:])), dim=-1)
-    boxes2_x0y0x1y1 = T.cat((T.min(boxes2_x0y0x1y1[..., :2], boxes2_x0y0x1y1[..., 2:]),
-                             T.max(boxes2_x0y0x1y1[..., :2], boxes2_x0y0x1y1[..., 2:])), dim=-1)
-
-    # 两个矩形的面积
-    boxes1_area = (boxes1_x0y0x1y1[..., 2] - boxes1_x0y0x1y1[..., 0]) * (
-                boxes1_x0y0x1y1[..., 3] - boxes1_x0y0x1y1[..., 1])
-    boxes2_area = (boxes2_x0y0x1y1[..., 2] - boxes2_x0y0x1y1[..., 0]) * (
-                boxes2_x0y0x1y1[..., 3] - boxes2_x0y0x1y1[..., 1])
-
-    # 相交矩形的左上角坐标、右下角坐标，shape 都是 (8, 13, 13, 3, 2)
-    left_up = T.max(boxes1_x0y0x1y1[..., :2], boxes2_x0y0x1y1[..., :2])
-    right_down = T.min(boxes1_x0y0x1y1[..., 2:], boxes2_x0y0x1y1[..., 2:])
-
-    # 相交矩形的面积inter_area。iou
-    inter_section = right_down - left_up
-    inter_section = T.where(inter_section < 0.0, inter_section*0, inter_section)
-    inter_area = inter_section[..., 0] * inter_section[..., 1]
-    union_area = boxes1_area + boxes2_area - inter_area
-    iou = inter_area / (union_area + 1e-9)
-
-    # 包围矩形的左上角坐标、右下角坐标，shape 都是 (8, 13, 13, 3, 2)
-    enclose_left_up = T.min(boxes1_x0y0x1y1[..., :2], boxes2_x0y0x1y1[..., :2])
-    enclose_right_down = T.max(boxes1_x0y0x1y1[..., 2:], boxes2_x0y0x1y1[..., 2:])
-
-    # 包围矩形的对角线的平方
-    enclose_wh = enclose_right_down - enclose_left_up
-    enclose_c2 = T.pow(enclose_wh[..., 0], 2) + T.pow(enclose_wh[..., 1], 2)
-
-    # 两矩形中心点距离的平方
-    p2 = T.pow(boxes1[..., 0] - boxes2[..., 0], 2) + T.pow(boxes1[..., 1] - boxes2[..., 1], 2)
-
-    # 增加av。加上除0保护防止nan。
-    atan1 = T.atan(boxes1[..., 2] / (boxes1[..., 3] + 1e-9))
-    atan2 = T.atan(boxes2[..., 2] / (boxes2[..., 3] + 1e-9))
-    v = 4.0 * T.pow(atan1 - atan2, 2) / (math.pi ** 2)
-    a = v / (1 - iou + v)
-
-    ciou = iou - 1.0 * p2 / enclose_c2 - 1.0 * a * v
-    return ciou
-
-
-def bbox_iou(boxes1, boxes2):
-    '''
-    预测框          boxes1 (?, grid_h, grid_w, 3,   1, 4)，神经网络的输出(tx, ty, tw, th)经过了后处理求得的(bx, by, bw, bh)
-    图片中所有的gt  boxes2 (?,      1,      1, 1,  70, 4)
-    '''
-    boxes1_area = boxes1[..., 2] * boxes1[..., 3]  # 所有格子的3个预测框的面积
-    boxes2_area = boxes2[..., 2] * boxes2[..., 3]  # 所有ground truth的面积
-
-    # (x, y, w, h)变成(x0, y0, x1, y1)
-    boxes1 = T.cat((boxes1[..., :2] - boxes1[..., 2:] * 0.5,
-                    boxes1[..., :2] + boxes1[..., 2:] * 0.5), dim=-1)
-    boxes2 = T.cat((boxes2[..., :2] - boxes2[..., 2:] * 0.5,
-                    boxes2[..., :2] + boxes2[..., 2:] * 0.5), dim=-1)
-
-    # 所有格子的3个预测框 分别 和   70个ground truth  计算iou。 所以left_up和right_down的shape = (?, grid_h, grid_w, 3, 70, 2)
-    left_up = T.max(boxes1[..., :2], boxes2[..., :2])  # 相交矩形的左上角坐标
-    right_down = T.min(boxes1[..., 2:], boxes2[..., 2:])  # 相交矩形的右下角坐标
-
-    # 相交矩形的w和h，是负数时取0     (?, grid_h, grid_w, 3, 70, 2)
-    inter_section = right_down - left_up
-    inter_section = T.where(inter_section < 0.0, inter_section*0, inter_section)
-    inter_area = inter_section[..., 0] * inter_section[..., 1]  # 相交矩形的面积            (?, grid_h, grid_w, 3, 70)
-    union_area = boxes1_area + boxes2_area - inter_area  # union_area      (?, grid_h, grid_w, 3, 70)
-    iou = 1.0 * inter_area / union_area  # iou                             (?, grid_h, grid_w, 3, 70)
-    return iou
-
-def loss_layer(conv, pred, label, bboxes, stride, num_class, iou_loss_thresh, alpha=0.5, gamma=2):
-    conv_shape = conv.shape
-    batch_size = conv_shape[0]
-    output_size = conv_shape[1]
-    input_size = stride * output_size
-
-    pred_xywh = pred[:, :, :, :, 0:4]
-    pred_conf = pred[:, :, :, :, 4:5]
-    pred_prob = pred[:, :, :, :, 5:]
-
-    label_xywh = label[:, :, :, :, 0:4]
-    respond_bbox = label[:, :, :, :, 4:5]
-    label_prob = label[:, :, :, :, 5:]
-
-    ciou = bbox_ciou(pred_xywh, label_xywh)                             # (8, 13, 13, 3)
-    ciou = ciou.reshape((batch_size, output_size, output_size, 3, 1))   # (8, 13, 13, 3, 1)
-    input_size = float(input_size)
-
-    # 每个预测框xxxiou_loss的权重 = 2 - (ground truth的面积/图片面积)
-    bbox_loss_scale = 2.0 - 1.0 * label_xywh[:, :, :, :, 2:3] * label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
-    ciou_loss = respond_bbox * bbox_loss_scale * (1 - ciou)  # 1. respond_bbox作为mask，有物体才计算xxxiou_loss
-
-    # 2. respond_bbox作为mask，有物体才计算类别loss
-    prob_pos_loss = label_prob * (0 - T.log(pred_prob + 1e-9))             # 二值交叉熵，tf中也是加了极小的常数防止nan
-    prob_neg_loss = (1 - label_prob) * (0 - T.log(1 - pred_prob + 1e-9))   # 二值交叉熵，tf中也是加了极小的常数防止nan
-    prob_mask = respond_bbox.repeat((1, 1, 1, 1, num_class))
-    prob_loss = prob_mask * (prob_pos_loss + prob_neg_loss)
-
-    # 3. xxxiou_loss和类别loss比较简单。重要的是conf_loss，是一个二值交叉熵损失
-    # 分两步：第一步是确定 grid_h * grid_w * 3 个预测框 哪些作为反例；第二步是计算二值交叉熵损失。
-    expand_pred_xywh = pred_xywh[:, :, :, :, np.newaxis, :]  # 扩展为(?, grid_h, grid_w, 3,   1, 4)
-    expand_bboxes = bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :]  # 扩展为(?,      1,      1, 1, 70, 4)
-    iou = bbox_iou(expand_pred_xywh, expand_bboxes)  # 所有格子的3个预测框 分别 和  70个ground truth  计算iou。   (?, grid_h, grid_w, 3, 70)
-    max_iou, max_iou_indices = T.max(iou, dim=-1, keepdim=True)        # 与70个ground truth的iou中，保留最大那个iou。  (?, grid_h, grid_w, 3, 1)
-
-    # respond_bgd代表  这个分支输出的 grid_h * grid_w * 3 个预测框是否是 反例（背景）
-    # label有物体，respond_bgd是0。 没物体的话：如果和某个gt(共70个)的iou超过iou_loss_thresh，respond_bgd是0；如果和所有gt(最多70个)的iou都小于iou_loss_thresh，respond_bgd是1。
-    # respond_bgd是0代表有物体，不是反例（或者是忽略框）；  权重respond_bgd是1代表没有物体，是反例。
-    # 有趣的是，模型训练时由于不断更新，对于同一张图片，两次预测的 grid_h * grid_w * 3 个预测框（对于这个分支输出）  是不同的。用的是这些预测框来与gt计算iou来确定哪些预测框是反例。
-    # 而不是用固定大小（不固定位置）的先验框。
-    respond_bgd = (1.0 - respond_bbox) * (max_iou < iou_loss_thresh).float()
-
-    # 二值交叉熵损失
-    pos_loss = respond_bbox * (0 - T.log(pred_conf + 1e-9))
-    neg_loss = respond_bgd  * (0 - T.log(1 - pred_conf + 1e-9))
-
-    conf_loss = pos_loss + neg_loss
-    # 回顾respond_bgd，某个预测框和某个gt的iou超过iou_loss_thresh，不被当作是反例。在参与“预测的置信位 和 真实置信位 的 二值交叉熵”时，这个框也可能不是正例(label里没标这个框是1的话)。这个框有可能不参与置信度loss的计算。
-    # 这种框一般是gt框附近的框，或者是gt框所在格子的另外两个框。它既不是正例也不是反例不参与置信度loss的计算。（论文里称之为ignore）
-
-    ciou_loss = ciou_loss.sum((1, 2, 3, 4)).mean()    # 每个样本单独计算自己的ciou_loss，再求平均值
-    conf_loss = conf_loss.sum((1, 2, 3, 4)).mean()    # 每个样本单独计算自己的conf_loss，再求平均值
-    prob_loss = prob_loss.sum((1, 2, 3, 4)).mean()    # 每个样本单独计算自己的prob_loss，再求平均值
-
-    return ciou_loss, conf_loss, prob_loss
-
-def decode(conv_output, anchors, stride, num_class):
-    conv_shape       = conv_output.shape
-    batch_size       = conv_shape[0]
-    output_size      = conv_shape[1]
-    anchor_per_scale = len(anchors)
-    conv_output = conv_output.reshape((batch_size, output_size, output_size, anchor_per_scale, 5 + num_class))
-    conv_raw_dxdy = conv_output[:, :, :, :, 0:2]
-    conv_raw_dwdh = conv_output[:, :, :, :, 2:4]
-    conv_raw_conf = conv_output[:, :, :, :, 4:5]
-    conv_raw_prob = conv_output[:, :, :, :, 5: ]
-
-    rows = T.arange(0, output_size, dtype=T.float32)
-    cols = T.arange(0, output_size, dtype=T.float32)
-    if torch.cuda.is_available():
-        rows = rows.cuda()
-        cols = cols.cuda()
-    rows = rows[np.newaxis, np.newaxis, :, np.newaxis, np.newaxis].repeat((1, output_size, 1, 1, 1))
-    cols = cols[np.newaxis, :, np.newaxis, np.newaxis, np.newaxis].repeat((1, 1, output_size, 1, 1))
-    offset = T.cat([rows, cols], dim=-1)
-    offset = offset.repeat((batch_size, 1, 1, anchor_per_scale, 1))
-    pred_xy = (T.sigmoid(conv_raw_dxdy) + offset) * stride
-
-    _anchors = T.Tensor(anchors)
-    if torch.cuda.is_available():
-        _anchors = _anchors.cuda()
-    pred_wh = (T.exp(conv_raw_dwdh) * _anchors)
-
-    pred_xywh = T.cat([pred_xy, pred_wh], dim=-1)
-    pred_conf = T.sigmoid(conv_raw_conf)
-    pred_prob = T.sigmoid(conv_raw_prob)
-    return T.cat([pred_xywh, pred_conf, pred_prob], dim=-1)
-
-
-def yolo_loss(args, num_classes, iou_loss_thresh, anchors):
-    conv_lbbox = args[0]   # (?, ?, ?, 3*(num_classes+5))
-    conv_mbbox = args[1]   # (?, ?, ?, 3*(num_classes+5))
-    conv_sbbox = args[2]   # (?, ?, ?, 3*(num_classes+5))
-    label_sbbox = args[3]   # (?, ?, ?, 3, num_classes+5)
-    label_mbbox = args[4]   # (?, ?, ?, 3, num_classes+5)
-    label_lbbox = args[5]   # (?, ?, ?, 3, num_classes+5)
-    true_bboxes = args[6]   # (?, 50, 4)
-    pred_sbbox = decode(conv_sbbox, anchors[0], 8, num_classes)
-    pred_mbbox = decode(conv_mbbox, anchors[1], 16, num_classes)
-    pred_lbbox = decode(conv_lbbox, anchors[2], 32, num_classes)
-    sbbox_ciou_loss, sbbox_conf_loss, sbbox_prob_loss = loss_layer(conv_sbbox, pred_sbbox, label_sbbox, true_bboxes, 8, num_classes, iou_loss_thresh)
-    mbbox_ciou_loss, mbbox_conf_loss, mbbox_prob_loss = loss_layer(conv_mbbox, pred_mbbox, label_mbbox, true_bboxes, 16, num_classes, iou_loss_thresh)
-    lbbox_ciou_loss, lbbox_conf_loss, lbbox_prob_loss = loss_layer(conv_lbbox, pred_lbbox, label_lbbox, true_bboxes, 32, num_classes, iou_loss_thresh)
-
-    ciou_loss = sbbox_ciou_loss + mbbox_ciou_loss + lbbox_ciou_loss
-    conf_loss = sbbox_conf_loss + mbbox_conf_loss + lbbox_conf_loss
-    prob_loss = sbbox_prob_loss + mbbox_prob_loss + lbbox_prob_loss
-    all_loss = ciou_loss + conf_loss + prob_loss
-    return [all_loss, ciou_loss, conf_loss, prob_loss]
 
 class FCOSLoss(torch.nn.Module):
-    def __init__(self, num_classes, iou_loss_thresh, anchors):
+    """
+    FCOSLoss
+    Args:
+        loss_alpha (float): alpha in focal loss
+        loss_gamma (float): gamma in focal loss
+        iou_loss_type(str): location loss type, IoU/GIoU/LINEAR_IoU
+        reg_weights(float): weight for location loss
+    """
+
+    def __init__(self,
+                 loss_alpha=0.25,
+                 loss_gamma=2.0,
+                 iou_loss_type="IoU",
+                 reg_weights=1.0):
         super(FCOSLoss, self).__init__()
-        self.num_classes = num_classes
-        self.iou_loss_thresh = iou_loss_thresh
-        self.anchors = anchors
+        self.loss_alpha = loss_alpha
+        self.loss_gamma = loss_gamma
+        self.iou_loss_type = iou_loss_type
+        self.reg_weights = reg_weights
 
-    def forward(self, args):
-        return yolo_loss(args, self.num_classes, self.iou_loss_thresh, self.anchors)
+    def __flatten_tensor(self, input, channel_first=False):
+        """
+        Flatten a Tensor
+        Args:
+            input   (Variables): Input Tensor
+            channel_first(bool): if true the dimension order of
+                Tensor is [N, C, H, W], otherwise is [N, H, W, C]
+        Return:
+            input_channel_last (Variables): The flattened Tensor in channel_last style
+        """
+        if channel_first:
+            input_channel_last = input.permute(0, 2, 3, 1)
+        else:
+            input_channel_last = input
+        _shape = input_channel_last.shape
+        N = _shape[0]
+        H = _shape[1]
+        W = _shape[2]
+        C = _shape[3]
+        input_channel_last = input_channel_last.reshape((N*H*W, C))
+        return input_channel_last
 
+    def __iou_loss(self, pred, targets, positive_mask, weights=None):
+        """
+        Calculate the loss for location prediction
+        Args:
+            pred          (Variables): bounding boxes prediction
+            targets       (Variables): targets for positive samples
+            positive_mask (Variables): mask of positive samples
+            weights       (Variables): weights for each positive samples
+        Return:
+            loss (Varialbes): location loss
+        """
+        positive_mask = positive_mask.reshape((positive_mask.shape[0],))
+        plw = pred[:, 0] * positive_mask   # [批大小*所有格子数, ]， 预测的l
+        pth = pred[:, 1] * positive_mask   # [批大小*所有格子数, ]， 预测的t
+        prw = pred[:, 2] * positive_mask   # [批大小*所有格子数, ]， 预测的r
+        pbh = pred[:, 3] * positive_mask   # [批大小*所有格子数, ]， 预测的b
+        tlw = targets[:, 0] * positive_mask   # [批大小*所有格子数, ]， 真实的l
+        tth = targets[:, 1] * positive_mask   # [批大小*所有格子数, ]， 真实的t
+        trw = targets[:, 2] * positive_mask   # [批大小*所有格子数, ]， 真实的r
+        tbh = targets[:, 3] * positive_mask   # [批大小*所有格子数, ]， 真实的b
+        area_target = (tlw + trw) * (tth + tbh)      # [批大小*所有格子数, ]， 真实的面积
+        area_predict = (plw + prw) * (pth + pbh)     # [批大小*所有格子数, ]， 预测的面积
+        ilw = torch.min(plw, tlw)   # [批大小*所有格子数, ]， 相交矩形的l
+        irw = torch.min(prw, trw)   # [批大小*所有格子数, ]， 相交矩形的r
+        ith = torch.min(pth, tth)   # [批大小*所有格子数, ]， 相交矩形的t
+        ibh = torch.min(pbh, tbh)   # [批大小*所有格子数, ]， 相交矩形的b
+        clw = torch.max(plw, tlw)   # [批大小*所有格子数, ]， 包围矩形的l
+        crw = torch.max(prw, trw)   # [批大小*所有格子数, ]， 包围矩形的r
+        cth = torch.max(pth, tth)   # [批大小*所有格子数, ]， 包围矩形的t
+        cbh = torch.max(pbh, tbh)   # [批大小*所有格子数, ]， 包围矩形的b
+        area_inter = (ilw + irw) * (ith + ibh)   # [批大小*所有格子数, ]， 相交矩形的面积
+        ious = (area_inter + 1.0) / (
+            area_predict + area_target - area_inter + 1.0)
+        ious = ious * positive_mask
+        if self.iou_loss_type.lower() == "linear_iou":
+            loss = 1.0 - ious
+        elif self.iou_loss_type.lower() == "giou":
+            area_uniou = area_predict + area_target - area_inter
+            area_circum = (clw + crw) * (cth + cbh) + 1e-7
+            giou = ious - (area_circum - area_uniou) / area_circum
+            loss = 1.0 - giou
+        elif self.iou_loss_type.lower() == "iou":
+            loss = 0.0 - torch.log(ious)
+        else:
+            raise KeyError
+        loss = loss[:, np.newaxis]
+        if weights is not None:
+            loss = loss * weights
+        return loss
+
+    def sigmoid_focal_loss(self, x, label, fg_num, gamma=2.0, alpha=0.25):
+        C = x.shape[1]
+        eye = torch.eye(C + 1, device=x.device)
+        one_hot = eye[label.reshape((label.shape[0],)).long()]
+        pos_mask = one_hot[:, 1:]  # 正样本掩码
+
+        p = torch.sigmoid(x)  # [批大小*所有格子数, 80]， 预测的类别概率
+        pos_loss = pos_mask * (0 - torch.log(p + 1e-9)) * torch.pow(1 - p, gamma) * alpha
+        neg_loss = (1.0 - pos_mask) * (0 - torch.log(1 - p + 1e-9)) * torch.pow(p, gamma) * (1 - alpha)
+        focal_loss = pos_loss + neg_loss
+        focal_loss = focal_loss / (fg_num + 1e-9)
+        return focal_loss
+
+    def sigmoid_cross_entropy_with_logits(self, x, label):
+        p = torch.sigmoid(x)
+        pos_loss = label * (0 - torch.log(p + 1e-9))
+        neg_loss = (1.0 - label) * (0 - torch.log(1 - p + 1e-9))
+        bce_loss = pos_loss + neg_loss
+        return bce_loss
+
+    def __call__(self, cls_logits, bboxes_reg, centerness, tag_labels,
+                 tag_bboxes, tag_center):
+        """
+        Calculate the loss for classification, location and centerness
+        Args:
+            cls_logits (list): 预测结果list。里面每个元素是[N, 80, 格子行数, 格子列数]     从 大感受野 到 小感受野
+            bboxes_reg (list): 预测结果list。里面每个元素是[N,  4, 格子行数, 格子列数]     从 大感受野 到 小感受野
+            centerness (list): 预测结果list。里面每个元素是[N,  1, 格子行数, 格子列数]     从 大感受野 到 小感受野
+            tag_labels (list): 真实标签list。里面每个元素是[N, 格子行数, 格子列数,  1]     从 小感受野 到 大感受野
+            tag_bboxes (list): 真实标签list。里面每个元素是[N, 格子行数, 格子列数,  4]     从 小感受野 到 大感受野
+            tag_center (list): 真实标签list。里面每个元素是[N, 格子行数, 格子列数,  1]     从 小感受野 到 大感受野
+        Return:
+            loss (dict): loss composed by classification loss, bounding box
+        """
+        cls_logits_flatten_list = []
+        bboxes_reg_flatten_list = []
+        centerness_flatten_list = []
+        tag_labels_flatten_list = []
+        tag_bboxes_flatten_list = []
+        tag_center_flatten_list = []
+        num_lvl = len(cls_logits)
+        for lvl in range(num_lvl):
+            cls_logits_flatten_list.append(
+                self.__flatten_tensor(cls_logits[num_lvl - 1 - lvl], True))   # 从 小感受野 到 大感受野 遍历cls_logits
+            bboxes_reg_flatten_list.append(
+                self.__flatten_tensor(bboxes_reg[num_lvl - 1 - lvl], True))
+            centerness_flatten_list.append(
+                self.__flatten_tensor(centerness[num_lvl - 1 - lvl], True))
+            tag_labels_flatten_list.append(
+                self.__flatten_tensor(tag_labels[lvl], False))   # 从 小感受野 到 大感受野 遍历tag_labels
+            tag_bboxes_flatten_list.append(
+                self.__flatten_tensor(tag_bboxes[lvl], False))
+            tag_center_flatten_list.append(
+                self.__flatten_tensor(tag_center[lvl], False))
+
+        # 顺序都是从 小感受野 到 大感受野
+        cls_logits_flatten = torch.cat(   # [批大小*所有格子数, 80]， 预测的类别
+            cls_logits_flatten_list, dim=0)
+        bboxes_reg_flatten = torch.cat(   # [批大小*所有格子数,  4]， 预测的lrtb
+            bboxes_reg_flatten_list, dim=0)
+        centerness_flatten = torch.cat(   # [批大小*所有格子数,  1]， 预测的centerness
+            centerness_flatten_list, dim=0)
+        tag_labels_flatten = torch.cat(   # [批大小*所有格子数,  1]， 真实的类别id
+            tag_labels_flatten_list, dim=0)
+        tag_bboxes_flatten = torch.cat(   # [批大小*所有格子数,  4]， 真实的lrtb
+            tag_bboxes_flatten_list, dim=0)
+        tag_center_flatten = torch.cat(   # [批大小*所有格子数,  1]， 真实的centerness
+            tag_center_flatten_list, dim=0)
+
+        mask_positive = tag_labels_flatten > 0   # [批大小*所有格子数,  1]， 正样本处为True
+        mask_positive_float = mask_positive.float()
+        num_positive_fp32 = mask_positive_float.sum()   # 这一批的正样本数
+        normalize_sum = tag_center_flatten + 0
+        normalize_sum = (mask_positive_float * normalize_sum).sum()
+
+        cls_loss = self.sigmoid_focal_loss(cls_logits_flatten, tag_labels_flatten, num_positive_fp32, gamma=self.loss_gamma, alpha=self.loss_alpha)
+        reg_loss = self.__iou_loss(bboxes_reg_flatten, tag_bboxes_flatten, mask_positive_float, tag_center_flatten) \
+                   * mask_positive_float / normalize_sum
+        ctn_loss = self.sigmoid_cross_entropy_with_logits(
+            x=centerness_flatten,
+            label=tag_center_flatten) * mask_positive_float / num_positive_fp32
+        loss_all = {
+            "loss_centerness": ctn_loss.sum(),
+            "loss_cls": cls_loss.sum(),
+            "loss_box": reg_loss.sum()
+        }
+        return loss_all
 
 
 
