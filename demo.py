@@ -35,11 +35,11 @@ use_gpu = True
 
 
 if __name__ == '__main__':
-    classes_path = 'data/voc_classes.txt'
-    # classes_path = 'data/coco_classes.txt'
+    # classes_path = 'data/voc_classes.txt'
+    classes_path = 'data/coco_classes.txt'
     # model_path可以是'fcos_r50_fpn_multiscale_2x.pt'、'./weights/step00001000.pt'这些。
     model_path = 'fcos_r50_fpn_multiscale_2x.pt'
-    model_path = './weights/step00001100.pt'
+    # model_path = './weights/step00001000.pt'
 
     # 验证时的分数阈值和nms_iou阈值
     conf_thresh = 0.025
