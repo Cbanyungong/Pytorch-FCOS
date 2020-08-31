@@ -980,6 +980,13 @@ class Gt2FCOSTarget(BaseOperator):
             bboxes = sample['gt_bbox']
             gt_class = sample['gt_class']
             gt_score = sample['gt_score']
+            no_gt = False
+            if len(bboxes) == 0:   # 如果没有gt，虚构一个gt为了后面不报错。
+                no_gt = True
+                bboxes = np.array([[0, 0, 100, 100]]).astype(np.float32)
+                gt_class = np.array([[0]]).astype(np.int32)
+                gt_score = np.array([[1]]).astype(np.float32)
+                # print('nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnone')
             # bboxes的横坐标变成缩放后图片中对应物体的横坐标
             bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * np.floor(im_info[1]) / \
                 np.floor(im_info[1] / im_info[2])
@@ -1063,6 +1070,8 @@ class Gt2FCOSTarget(BaseOperator):
                 end = beg + num_points_each_level[lvl]
                 split_sections.append(end)
                 beg = end
+            if no_gt:   # 如果没有gt，labels里全部置为0（背景的类别id是0）即表示所有格子都是负样本
+                labels[:, :] = 0
             labels_by_level = np.split(labels, split_sections, axis=0)             # 一个list，根据split_sections切分，各个感受野的target切分开来。
             reg_targets_by_level = np.split(reg_targets, split_sections, axis=0)   # 一个list，根据split_sections切分，各个感受野的target切分开来。
             ctn_targets_by_level = np.split(ctn_targets, split_sections, axis=0)   # 一个list，根据split_sections切分，各个感受野的target切分开来。
