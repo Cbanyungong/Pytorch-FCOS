@@ -114,7 +114,8 @@ class FCOSLoss(torch.nn.Module):
         pos_loss = pos_mask * (0 - torch.log(p + 1e-9)) * torch.pow(1 - p, gamma) * alpha
         neg_loss = (1.0 - pos_mask) * (0 - torch.log(1 - p + 1e-9)) * torch.pow(p, gamma) * (1 - alpha)
         focal_loss = pos_loss + neg_loss
-        focal_loss = focal_loss / (fg_num + 1e-9)
+        if fg_num > 0.5:   # 当没有gt时，即fg_num==0时，focal_loss什么都不除。
+            focal_loss = focal_loss / fg_num
         return focal_loss
 
     def sigmoid_cross_entropy_with_logits(self, x, label):
@@ -173,18 +174,17 @@ class FCOSLoss(torch.nn.Module):
         tag_center_flatten = torch.cat(   # [批大小*所有格子数,  1]， 真实的centerness
             tag_center_flatten_list, dim=0)
 
-        mask_positive = tag_labels_flatten > 0   # [批大小*所有格子数,  1]， 正样本处为True
-        mask_positive_float = mask_positive.float()
+        mask_positive = tag_labels_flatten > 0        # [批大小*所有格子数,  1]， 正样本处为True
+        mask_positive_float = mask_positive.float()   # [批大小*所有格子数,  1]， 正样本处为1
         num_positive_fp32 = mask_positive_float.sum()   # 这一批的正样本数
         normalize_sum = tag_center_flatten + 0
         normalize_sum = (mask_positive_float * normalize_sum).sum()
 
         cls_loss = self.sigmoid_focal_loss(cls_logits_flatten, tag_labels_flatten, num_positive_fp32, gamma=self.loss_gamma, alpha=self.loss_alpha)
-        reg_loss = self.__iou_loss(bboxes_reg_flatten, tag_bboxes_flatten, mask_positive_float, tag_center_flatten) \
-                   * mask_positive_float / normalize_sum
+        reg_loss = self.__iou_loss(bboxes_reg_flatten, tag_bboxes_flatten, mask_positive_float, tag_center_flatten) * mask_positive_float / (normalize_sum + 1e-9)
         ctn_loss = self.sigmoid_cross_entropy_with_logits(
             x=centerness_flatten,
-            label=tag_center_flatten) * mask_positive_float / num_positive_fp32
+            label=tag_center_flatten) * mask_positive_float / (num_positive_fp32 + 1e-9)
         loss_all = {
             "loss_centerness": ctn_loss.sum(),
             "loss_cls": cls_loss.sum(),
