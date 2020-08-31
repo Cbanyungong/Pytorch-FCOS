@@ -43,6 +43,16 @@ class FPN(torch.nn.Module):
 
         self.upsample = torch.nn.Upsample(scale_factor=2, mode='nearest')
 
+    def freeze(self):
+        self.s32_conv.freeze()
+        self.s16_conv.freeze()
+        self.s8_conv.freeze()
+        self.sc_s32_conv.freeze()
+        self.sc_s16_conv.freeze()
+        self.sc_s8_conv.freeze()
+        self.p6_conv.freeze()
+        self.p7_conv.freeze()
+
     def forward(self, body_feats):
         '''
         :param body_feats:  [s8, s16, s32]

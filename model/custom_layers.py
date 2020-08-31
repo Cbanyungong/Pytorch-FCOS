@@ -92,15 +92,15 @@ class Conv2dUnit(torch.nn.Module):
 
     def freeze(self):
         self.conv.weight.requires_grad = False
-        if self.conv.bias:
+        if self.conv.bias is not None:
             self.conv.bias.requires_grad = False
-        if self.bn:
+        if self.bn is not None:
             self.bn.weight.requires_grad = False
             self.bn.bias.requires_grad = False
-        if self.gn:
+        if self.gn is not None:
             self.gn.weight.requires_grad = False
             self.gn.bias.requires_grad = False
-        if self.af:
+        if self.af is not None:
             self.af.weight.requires_grad = False
             self.af.bias.requires_grad = False
 

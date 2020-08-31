@@ -109,6 +109,7 @@ if __name__ == '__main__':
 
         # 冻结，使得需要的显存减少。低显存的卡建议这样配置。
         resnet.freeze(freeze_at=5)
+        # fpn.freeze()
 
 
     if use_gpu:   # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里
