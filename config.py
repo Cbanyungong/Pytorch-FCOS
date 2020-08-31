@@ -28,14 +28,10 @@ class TrainConfig(object):
         self.train_pre_path = '../COCO/train2017/'  # 训练集图片相对路径
         self.val_pre_path = '../COCO/val2017/'  # 验证集图片相对路径
 
-        # 训练时若预测框与所有的gt小于阈值self.iou_loss_thresh时视为反例
-        self.iou_loss_thresh = 0.7
 
-        # 模式。 0-从头训练，1-读取之前的模型继续训练（model_path可以是'yolov4.h5'、'./weights/step00001000.h5'这些。）
-        self.pattern = 1
         self.lr = 0.0001
         self.batch_size = 1
-        # 如果self.pattern = 1，需要指定self.model_path表示从哪个模型读取权重继续训练。
+        # self.model_path表示从哪个模型读取权重继续训练。
         self.model_path = 'fcos_r50_fpn_multiscale_2x.pt'
         # self.model_path = './weights/step00001000.pt'
 
@@ -45,7 +41,7 @@ class TrainConfig(object):
         # 每隔几步计算一次eval集的mAP
         self.eval_iter = 5000
         # 训练多少步
-        self.max_iters = 800000
+        self.max_iters = 500000
 
 
         # 验证

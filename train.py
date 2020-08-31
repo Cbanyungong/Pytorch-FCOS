@@ -78,14 +78,13 @@ if __name__ == '__main__':
     # 创建模型
     resnet = Resnet(50)
     fpn = FPN()
-    loss = FCOSLoss(**cfg.fcos_loss)
-    head = FCOSHead(fcos_loss=loss)
+    fcos_loss = FCOSLoss(**cfg.fcos_loss)
+    head = FCOSHead(fcos_loss=fcos_loss)
     fcos = FCOS(resnet, fpn, head)
     _decode = Decode(cfg.conf_thresh, cfg.nms_thresh, cfg.input_shape, fcos, class_names, use_gpu)
 
-    # 模式。 0-从头训练，1-读取之前的模型继续训练（model_path可以是'yolov4.h5'、'./weights/step00001000.h5'这些。）
-    pattern = cfg.pattern
-    if pattern == 1:
+    # 加载权重
+    if cfg.model_path is not None:
         # 加载参数, 跳过形状不匹配的。
         _state_dict = fcos.state_dict()
         pretrained_dict = torch.load(cfg.model_path)
@@ -114,15 +113,10 @@ if __name__ == '__main__':
         #     else:
         #         print('freeze %s' % param[0])
         #         param[1].requires_grad = False
-    elif pattern == 0:
-        pass
 
 
-    # 建立损失函数
-    fcos_loss = FCOSLoss(num_classes, cfg.iou_loss_thresh, 11111)
     if use_gpu:   # 如果有gpu可用，模型（包括了权重weight）存放在gpu显存里
         fcos = fcos.cuda()
-        fcos_loss = fcos_loss.cuda()
 
     # 种类id
     _catid2clsid = copy.deepcopy(catid2clsid)
@@ -277,71 +271,68 @@ if __name__ == '__main__':
             batch_reg_target4 = np.concatenate(batch_reg_target4, 0)
             batch_centerness4 = np.concatenate(batch_centerness4, 0)
 
-            dic = {}
-            dic['batch_images'] = batch_images
-            dic['batch_labels0'] = batch_labels0
-            dic['batch_reg_target0'] = batch_reg_target0
-            dic['batch_centerness0'] = batch_centerness0
-            dic['batch_labels1'] = batch_labels1
-            dic['batch_reg_target1'] = batch_reg_target1
-            dic['batch_centerness1'] = batch_centerness1
-            dic['batch_labels2'] = batch_labels2
-            dic['batch_reg_target2'] = batch_reg_target2
-            dic['batch_centerness2'] = batch_centerness2
-            dic['batch_labels3'] = batch_labels3
-            dic['batch_reg_target3'] = batch_reg_target3
-            dic['batch_centerness3'] = batch_centerness3
-            dic['batch_labels4'] = batch_labels4
-            dic['batch_reg_target4'] = batch_reg_target4
-            dic['batch_centerness4'] = batch_centerness4
-            np.savez('data', **dic)
-            print()
-
-            # 一些变换
-            batch_image = batch_image.transpose(0, 3, 1, 2)
-            batch_image = torch.Tensor(batch_image)
-
-            batch_label[2] = torch.Tensor(batch_label[2])
-            batch_label[1] = torch.Tensor(batch_label[1])
-            batch_label[0] = torch.Tensor(batch_label[0])
-
-            batch_gt_bbox = torch.Tensor(batch_gt_bbox)
-
-            if use_cuda:
+            batch_images = torch.Tensor(batch_images)
+            batch_labels0 = torch.Tensor(batch_labels0)
+            batch_reg_target0 = torch.Tensor(batch_reg_target0)
+            batch_centerness0 = torch.Tensor(batch_centerness0)
+            batch_labels1 = torch.Tensor(batch_labels1)
+            batch_reg_target1 = torch.Tensor(batch_reg_target1)
+            batch_centerness1 = torch.Tensor(batch_centerness1)
+            batch_labels2 = torch.Tensor(batch_labels2)
+            batch_reg_target2 = torch.Tensor(batch_reg_target2)
+            batch_centerness2 = torch.Tensor(batch_centerness2)
+            batch_labels3 = torch.Tensor(batch_labels3)
+            batch_reg_target3 = torch.Tensor(batch_reg_target3)
+            batch_centerness3 = torch.Tensor(batch_centerness3)
+            batch_labels4 = torch.Tensor(batch_labels4)
+            batch_reg_target4 = torch.Tensor(batch_reg_target4)
+            batch_centerness4 = torch.Tensor(batch_centerness4)
+            if use_gpu:
                 batch_image = batch_image.cuda()
-                batch_label[2] = batch_label[2].cuda()
-                batch_label[1] = batch_label[1].cuda()
-                batch_label[0] = batch_label[0].cuda()
-                batch_gt_bbox = batch_gt_bbox.cuda()
+                batch_labels0 = batch_labels0.cuda()
+                batch_reg_target0 = batch_reg_target0.cuda()
+                batch_centerness0 = batch_centerness0.cuda()
+                batch_labels1 = batch_labels1.cuda()
+                batch_reg_target1 = batch_reg_target1.cuda()
+                batch_centerness1 = batch_centerness1.cuda()
+                batch_labels2 = batch_labels2.cuda()
+                batch_reg_target2 = batch_reg_target2.cuda()
+                batch_centerness2 = batch_centerness2.cuda()
+                batch_labels3 = batch_labels3.cuda()
+                batch_reg_target3 = batch_reg_target3.cuda()
+                batch_centerness3 = batch_centerness3.cuda()
+                batch_labels4 = batch_labels4.cuda()
+                batch_reg_target4 = batch_reg_target4.cuda()
+                batch_centerness4 = batch_centerness4.cuda()
+            tag_labels = [batch_labels0, batch_labels1, batch_labels2, batch_labels3, batch_labels4]
+            tag_bboxes = [batch_reg_target0, batch_reg_target1, batch_reg_target2, batch_reg_target3, batch_reg_target4]
+            tag_center = [batch_centerness0, batch_centerness1, batch_centerness2, batch_centerness3, batch_centerness4]
+            losses = fcos(batch_image, None, eval=False, tag_labels=tag_labels, tag_bboxes=tag_bboxes, tag_centerness=tag_center)
+            loss_centerness = losses['loss_centerness']
+            loss_cls = losses['loss_cls']
+            loss_box = losses['loss_box']
+            all_loss = loss_cls + loss_box + loss_centerness
 
-            l_pred, m_pred, s_pred = yolo(batch_image)  # 直接卷积后的输出
-            args = [l_pred, m_pred, s_pred, batch_label[2], batch_label[1], batch_label[0], batch_gt_bbox]
-            losses = yolo_loss(args)
-            if use_cuda:
-                all_loss = losses[0].cpu().data.numpy()
-                ciou_loss = losses[1].cpu().data.numpy()
-                conf_loss = losses[2].cpu().data.numpy()
-                prob_loss = losses[3].cpu().data.numpy()
-            else:
-                all_loss = losses[0].data.numpy()
-                ciou_loss = losses[1].data.numpy()
-                conf_loss = losses[2].data.numpy()
-                prob_loss = losses[3].data.numpy()
+            _all_loss = all_loss.cpu().data.numpy()
+            _loss_cls = loss_cls.cpu().data.numpy()
+            _loss_box = loss_box.cpu().data.numpy()
+            _loss_centerness = loss_centerness.cpu().data.numpy()
+
             # 更新权重
             optimizer.zero_grad()  # 清空上一步的残余更新参数值
-            losses[0].backward()  # 误差反向传播, 计算参数更新值
+            all_loss.backward()  # 误差反向传播, 计算参数更新值
             optimizer.step()  # 将参数更新值施加到 net 的 parameters 上
 
             # ==================== log ====================
             if iter_id % 20 == 0:
-                strs = 'Train iter: {}, all_loss: {:.6f}, ciou_loss: {:.6f}, conf_loss: {:.6f}, prob_loss: {:.6f}, eta: {}'.format(
-                    iter_id, all_loss, ciou_loss, conf_loss, prob_loss, eta)
+                strs = 'Train iter: {}, all_loss: {:.6f}, giou_loss: {:.6f}, conf_loss: {:.6f}, cent_loss: {:.6f}, eta: {}'.format(
+                    iter_id, _all_loss, _loss_box, _loss_cls, _loss_centerness, eta)
                 logger.info(strs)
 
             # ==================== save ====================
             if iter_id % cfg.save_iter == 0:
                 save_path = './weights/step%.8d.pt' % iter_id
-                torch.save(yolo.state_dict(), save_path)
+                torch.save(fcos.state_dict(), save_path)
                 path_dir = os.listdir('./weights')
                 steps = []
                 names = []
@@ -357,17 +348,17 @@ if __name__ == '__main__':
 
             # ==================== eval ====================
             if iter_id % cfg.eval_iter == 0:
-                yolo.eval()   # 切换到验证模式
+                fcos.eval()   # 切换到验证模式
                 box_ap = eval(_decode, val_images, cfg.val_pre_path, cfg.val_path, cfg.eval_batch_size, _clsid2catid, cfg.draw_image)
                 logger.info("box ap: %.3f" % (box_ap[0], ))
-                yolo.train()  # 切换到训练模式
+                fcos.train()  # 切换到训练模式
 
                 # 以box_ap作为标准
                 ap = box_ap
                 if ap[0] > best_ap_list[0]:
                     best_ap_list[0] = ap[0]
                     best_ap_list[1] = iter_id
-                    torch.save(yolo.state_dict(), './weights/best_model.pt')
+                    torch.save(fcos.state_dict(), './weights/best_model.pt')
                 logger.info("Best test ap: {}, in iter: {}".format(best_ap_list[0], best_ap_list[1]))
 
             # ==================== exit ====================

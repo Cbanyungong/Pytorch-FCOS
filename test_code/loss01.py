@@ -259,25 +259,6 @@ exe = fluid.Executor(fluid.CPUPlace())
 exe.run(fluid.default_startup_program())
 
 
-
-# cls_logits0_ndarray = np.random.rand(1, 80, 96, 128).astype(np.float32)
-# cls_logits1_ndarray = np.random.rand(1, 80, 48, 64).astype(np.float32)
-# cls_logits2_ndarray = np.random.rand(1, 80, 24, 32).astype(np.float32)
-# cls_logits3_ndarray = np.random.rand(1, 80, 12, 16).astype(np.float32)
-# cls_logits4_ndarray = np.random.rand(1, 80, 6, 8).astype(np.float32)
-#
-# bboxes_reg0_ndarray = np.random.rand(1, 4, 96, 128).astype(np.float32)
-# bboxes_reg1_ndarray = np.random.rand(1, 4, 48, 64).astype(np.float32)
-# bboxes_reg2_ndarray = np.random.rand(1, 4, 24, 32).astype(np.float32)
-# bboxes_reg3_ndarray = np.random.rand(1, 4, 12, 16).astype(np.float32)
-# bboxes_reg4_ndarray = np.random.rand(1, 4, 6, 8).astype(np.float32)
-#
-# centerness0_ndarray = np.random.rand(1, 1, 96, 128).astype(np.float32)
-# centerness1_ndarray = np.random.rand(1, 1, 48, 64).astype(np.float32)
-# centerness2_ndarray = np.random.rand(1, 1, 24, 32).astype(np.float32)
-# centerness3_ndarray = np.random.rand(1, 1, 12, 16).astype(np.float32)
-# centerness4_ndarray = np.random.rand(1, 1, 6, 8).astype(np.float32)
-
 cls_logits4_ndarray = np.random.rand(1, 80, 96, 128).astype(np.float32)
 cls_logits3_ndarray = np.random.rand(1, 80, 48, 64).astype(np.float32)
 cls_logits2_ndarray = np.random.rand(1, 80, 24, 32).astype(np.float32)
@@ -318,22 +299,6 @@ batch_labels4 = dic['batch_labels4']
 batch_reg_target4 = dic['batch_reg_target4']
 batch_centerness4 = dic['batch_centerness4']
 
-
-# batch_labels4 = dic['batch_labels0']
-# batch_reg_target4 = dic['batch_reg_target0']
-# batch_centerness4 = dic['batch_centerness0']
-# batch_labels3 = dic['batch_labels1']
-# batch_reg_target3 = dic['batch_reg_target1']
-# batch_centerness3 = dic['batch_centerness1']
-# batch_labels2 = dic['batch_labels2']
-# batch_reg_target2 = dic['batch_reg_target2']
-# batch_centerness2 = dic['batch_centerness2']
-# batch_labels1 = dic['batch_labels3']
-# batch_reg_target1 = dic['batch_reg_target3']
-# batch_centerness1 = dic['batch_centerness3']
-# batch_labels0 = dic['batch_labels4']
-# batch_reg_target0 = dic['batch_reg_target4']
-# batch_centerness0 = dic['batch_centerness4']
 
 
 print()
