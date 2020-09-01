@@ -51,8 +51,8 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
 
         # ========= 一些设置 =========
         self.train_cfg = dict(
-            lr=0.0001,   # 每隔几步保存一次模型
-            batch_size=1,   # 每隔几步保存一次模型
+            lr=0.0001,
+            batch_size=1,
             model_path='fcos_r50_fpn_multiscale_2x.pt',
             # model_path='./weights/step00001000.pt',
 
@@ -175,8 +175,8 @@ class FCOS_RT_R50_FPN_4x_Config(object):
 
         # ========= 一些设置 =========
         self.train_cfg = dict(
-            lr=0.0001,   # 每隔几步保存一次模型
-            batch_size=1,   # 每隔几步保存一次模型
+            lr=0.0001,
+            batch_size=4,
             model_path='fcos_rt_r50_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
 
@@ -201,7 +201,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         # 测试。用于demo.py
         self.test_cfg = dict(
             model_path='fcos_rt_r50_fpn_4x.pt',
-            # model_path='./weights/step00001000.pt',
+            # model_path='./weights/step00025000.pt',
             target_size=512,
             max_size=736,
             conf_thresh=0.1,
