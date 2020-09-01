@@ -36,6 +36,7 @@ use_gpu = True
 
 if __name__ == '__main__':
     cfg = FCOS_R50_FPN_Multiscale_2x_Config()
+    cfg = FCOS_RT_R50_FPN_4x_Config()
 
 
     # 读取的模型
@@ -83,6 +84,6 @@ if __name__ == '__main__':
         for k in range(num_classes):
             _clsid2catid[k] = k
 
-    _decode = Decode(conf_thresh, nms_thresh, fcos, all_classes, use_gpu)
+    _decode = Decode(conf_thresh, nms_thresh, fcos, all_classes, use_gpu, cfg, for_test=False)
     box_ap = eval(_decode, images, eval_pre_path, anno_file, eval_batch_size, _clsid2catid, draw_image)
 

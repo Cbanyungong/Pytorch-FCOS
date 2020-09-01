@@ -79,6 +79,7 @@ use_gpu = True
 
 if __name__ == '__main__':
     cfg = FCOS_R50_FPN_Multiscale_2x_Config()
+    # cfg = FCOS_RT_R50_FPN_4x_Config()
 
     class_names = get_classes(cfg.classes_path)
     num_classes = len(class_names)

@@ -204,7 +204,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
             # model_path='./weights/step00001000.pt',
             target_size=512,
             max_size=736,
-            conf_thresh=0.2,
+            conf_thresh=0.1,
             nms_thresh=0.6,
             draw_image=True,
         )
