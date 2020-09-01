@@ -21,7 +21,7 @@ from collections import OrderedDict
 import os
 import torch
 
-from config import TrainConfig
+from config import *
 from model.losses import FCOSLoss
 from model.decode_np import Decode
 from model.fcos import FCOS
@@ -82,7 +82,7 @@ use_gpu = True
 
 
 if __name__ == '__main__':
-    cfg = TrainConfig()
+    cfg = FCOS_R50_FPN_Multiscale_2x_Config()
 
     class_names = get_classes(cfg.classes_path)
     num_classes = len(class_names)
@@ -96,14 +96,14 @@ if __name__ == '__main__':
     fcos_loss = FCOSLoss(**cfg.fcos_loss)
     head = FCOSHead(num_classes=num_classes, fcos_loss=fcos_loss)
     fcos = FCOS(resnet, fpn, head)
-    _decode = Decode(cfg.conf_thresh, cfg.nms_thresh, fcos, class_names, use_gpu)
+    _decode = Decode(cfg.eval_cfg['conf_thresh'], cfg.eval_cfg['nms_thresh'], fcos, class_names, use_gpu)
 
     # 加载权重
-    if cfg.model_path is not None:
+    if cfg.train_cfg['model_path'] is not None:
         # 加载参数, 跳过形状不匹配的。
-        load_weights(fcos, cfg.model_path)
+        load_weights(fcos, cfg.train_cfg['model_path'])
 
-        strs = cfg.model_path.split('step')
+        strs = cfg.train_cfg['model_path'].split('step')
         if len(strs) == 2:
             iter_id = int(strs[1][:8])
 
@@ -137,7 +137,7 @@ if __name__ == '__main__':
             dataset = json.loads(line)
             val_images = dataset['images']
 
-    batch_size = cfg.batch_size
+    batch_size = cfg.train_cfg['batch_size']
     with_mixup = cfg.decodeImage['with_mixup']
     context = cfg.context
     # 预处理
@@ -156,7 +156,7 @@ if __name__ == '__main__':
     # 保存模型的目录
     if not os.path.exists('./weights'): os.mkdir('./weights')
 
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, fcos.parameters()), lr=cfg.lr)   # requires_grad==True 的参数才可以被更新
+    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, fcos.parameters()), lr=cfg.train_cfg['lr'])   # requires_grad==True 的参数才可以被更新
 
     time_stat = deque(maxlen=20)
     start_time = time.time()
@@ -176,7 +176,7 @@ if __name__ == '__main__':
             end_time = time.time()
             time_stat.append(end_time - start_time)
             time_cost = np.mean(time_stat)
-            eta_sec = (cfg.max_iters - iter_id) * time_cost
+            eta_sec = (cfg.train_cfg['max_iters'] - iter_id) * time_cost
             eta = str(datetime.timedelta(seconds=int(eta_sec)))
 
             # ==================== train ====================
@@ -327,7 +327,7 @@ if __name__ == '__main__':
                 logger.info(strs)
 
             # ==================== save ====================
-            if iter_id % cfg.save_iter == 0:
+            if iter_id % cfg.train_cfg['save_iter'] == 0:
                 save_path = './weights/step%.8d.pt' % iter_id
                 torch.save(fcos.state_dict(), save_path)
                 path_dir = os.listdir('./weights')
@@ -344,9 +344,9 @@ if __name__ == '__main__':
                 logger.info('Save model to {}'.format(save_path))
 
             # ==================== eval ====================
-            if iter_id % cfg.eval_iter == 0:
+            if iter_id % cfg.train_cfg['eval_iter'] == 0:
                 fcos.eval()   # 切换到验证模式
-                box_ap = eval(_decode, val_images, cfg.val_pre_path, cfg.val_path, cfg.eval_batch_size, _clsid2catid, cfg.draw_image)
+                box_ap = eval(_decode, val_images, cfg.val_pre_path, cfg.val_path, cfg.eval_cfg['eval_batch_size'], _clsid2catid, cfg.eval_cfg['draw_image'])
                 logger.info("box ap: %.3f" % (box_ap[0], ))
                 fcos.train()  # 切换到训练模式
 
@@ -359,7 +359,7 @@ if __name__ == '__main__':
                 logger.info("Best test ap: {}, in iter: {}".format(best_ap_list[0], best_ap_list[1]))
 
             # ==================== exit ====================
-            if iter_id == cfg.max_iters:
+            if iter_id == cfg.train_cfg['max_iters']:
                 logger.info('Done.')
                 exit(0)
 

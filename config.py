@@ -9,7 +9,7 @@
 # ================================================================
 
 
-class TrainConfig(object):
+class FCOS_R50_FPN_Multiscale_2x_Config(object):
     """
     train.py里需要的配置
     """
@@ -29,29 +29,26 @@ class TrainConfig(object):
         self.val_pre_path = '../COCO/val2017/'  # 验证集图片相对路径
 
 
-        self.lr = 0.0001
-        self.batch_size = 1
-        # self.model_path表示从哪个模型读取权重继续训练。
-        self.model_path = 'fcos_r50_fpn_multiscale_2x.pt'
-        # self.model_path = './weights/step00001000.pt'
-
         # ========= 一些设置 =========
-        # 每隔几步保存一次模型
-        self.save_iter = 1000
-        # 每隔几步计算一次eval集的mAP
-        self.eval_iter = 5000
-        # 训练多少步
-        self.max_iters = 500000
+        self.train_cfg = dict(
+            lr=0.0001,   # 每隔几步保存一次模型
+            batch_size=1,   # 每隔几步保存一次模型
+            model_path='fcos_r50_fpn_multiscale_2x.pt',
+            # model_path='./weights/step00001000.pt',
+
+            save_iter=1000,   # 每隔几步保存一次模型
+            eval_iter=5000,   # 每隔几步计算一次eval集的mAP
+            max_iters=500000,   # 训练多少步
+        )
 
 
         # 验证
-        # 验证时的分数阈值和nms_iou阈值
-        self.conf_thresh = 0.025
-        self.nms_thresh = 0.6
-        # 是否画出验证集图片
-        self.draw_image = False
-        # 验证时的批大小。由于太麻烦，暂时只支持1。
-        self.eval_batch_size = 1
+        self.eval_cfg = dict(
+            conf_thresh=0.025,   # 验证时的分数阈值和nms_iou阈值
+            nms_thresh=0.6,
+            draw_image=False,    # 是否画出验证集图片
+            eval_batch_size=1,   # 验证时的批大小。由于太麻烦，暂时只支持1。
+        )
 
 
         # ============= 模型相关 =============

@@ -24,6 +24,7 @@ __pycache__/
 *.npz
 *.zip
 *.pt
+*.pth
 /yolov4/
 
 
