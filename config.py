@@ -7,6 +7,29 @@
 #   Description : pytorch_fcos
 #
 # ================================================================
+from model.losses import *
+from model.fcos import *
+from model.head import *
+from model.neck import *
+from model.resnet import *
+
+def select_backbone(name):
+    if name == 'Resnet':
+        return Resnet
+
+def select_fpn(name):
+    if name == 'FPN':
+        return FPN
+
+def select_head(name):
+    if name == 'FCOSHead':
+        return FCOSHead
+    if name == 'FCOSSharedHead':
+        return FCOSSharedHead
+
+def select_loss(name):
+    if name == 'FCOSLoss':
+        return FCOSLoss
 
 
 class FCOS_R50_FPN_Multiscale_2x_Config(object):

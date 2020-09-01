@@ -22,12 +22,8 @@ import os
 import torch
 
 from config import *
-from model.losses import *
 from model.decode_np import Decode
 from model.fcos import *
-from model.head import *
-from model.neck import *
-from model.resnet import *
 from tools.cocotools import get_classes, catid2clsid, clsid2catid
 from model.decode_np import Decode
 from tools.cocotools import eval
@@ -91,11 +87,19 @@ if __name__ == '__main__':
     iter_id = 0
 
     # 创建模型
-    resnet = Resnet(**cfg.resnet)
-    fpn = FPN(**cfg.fpn)
-    fcos_loss = FCOSLoss(**cfg.fcos_loss)
-    head = FCOSHead(num_classes=num_classes, fcos_loss=fcos_loss, **cfg.head)
-    fcos = FCOS(resnet, fpn, head)
+    Backbone = select_backbone(cfg.backbone_type)
+    backbone = Backbone(**cfg.backbone)
+
+    Fpn = select_fpn(cfg.fpn_type)
+    fpn = Fpn(**cfg.fpn)
+
+    Loss = select_loss(cfg.fcos_loss_type)
+    fcos_loss = Loss(**cfg.fcos_loss)
+
+    Head = select_head(cfg.head_type)
+    head = Head(num_classes=num_classes, fcos_loss=fcos_loss, **cfg.head)
+
+    fcos = FCOS(backbone, fpn, head)
     _decode = Decode(cfg.eval_cfg['conf_thresh'], cfg.eval_cfg['nms_thresh'], fcos, class_names, use_gpu)
 
     # 加载权重
@@ -108,7 +112,8 @@ if __name__ == '__main__':
             iter_id = int(strs[1][:8])
 
         # 冻结，使得需要的显存减少。低显存的卡建议这样配置。
-        resnet.freeze(freeze_at=5)
+        if cfg.backbone_type == 'Resnet':
+            backbone.freeze(freeze_at=5)
         # fpn.freeze()
 
 
