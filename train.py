@@ -79,7 +79,7 @@ use_gpu = True
 
 if __name__ == '__main__':
     cfg = FCOS_R50_FPN_Multiscale_2x_Config()
-    # cfg = FCOS_RT_R50_FPN_4x_Config()
+    cfg = FCOS_RT_R50_FPN_4x_Config()
 
     class_names = get_classes(cfg.classes_path)
     num_classes = len(class_names)
@@ -159,6 +159,9 @@ if __name__ == '__main__':
     padBatch = PadBatch(**cfg.padBatch)    # 由于ResizeImage()的机制特殊，这一批所有的图片的尺度不一定全相等，所以这里对齐。
     gt2FCOSTarget = Gt2FCOSTarget(**cfg.gt2FCOSTarget)   # 填写target张量。
 
+    # 输出几个特征图
+    n_features = len(cfg.gt2FCOSTarget['downsample_ratios'])
+
     # 保存模型的目录
     if not os.path.exists('./weights'): os.mkdir('./weights')
 
@@ -213,12 +216,13 @@ if __name__ == '__main__':
             batch_labels2 = []
             batch_reg_target2 = []
             batch_centerness2 = []
-            batch_labels3 = []
-            batch_reg_target3 = []
-            batch_centerness3 = []
-            batch_labels4 = []
-            batch_reg_target4 = []
-            batch_centerness4 = []
+            if n_features == 5:
+                batch_labels3 = []
+                batch_reg_target3 = []
+                batch_centerness3 = []
+                batch_labels4 = []
+                batch_reg_target4 = []
+                batch_centerness4 = []
             for sample in samples:
                 im = sample['image']
                 batch_images.append(np.expand_dims(im, 0))
@@ -244,19 +248,20 @@ if __name__ == '__main__':
                 temp = sample['centerness2']
                 batch_centerness2.append(np.expand_dims(temp, 0))
 
-                temp = sample['labels3']
-                batch_labels3.append(np.expand_dims(temp, 0))
-                temp = sample['reg_target3']
-                batch_reg_target3.append(np.expand_dims(temp, 0))
-                temp = sample['centerness3']
-                batch_centerness3.append(np.expand_dims(temp, 0))
+                if n_features == 5:
+                    temp = sample['labels3']
+                    batch_labels3.append(np.expand_dims(temp, 0))
+                    temp = sample['reg_target3']
+                    batch_reg_target3.append(np.expand_dims(temp, 0))
+                    temp = sample['centerness3']
+                    batch_centerness3.append(np.expand_dims(temp, 0))
 
-                temp = sample['labels4']
-                batch_labels4.append(np.expand_dims(temp, 0))
-                temp = sample['reg_target4']
-                batch_reg_target4.append(np.expand_dims(temp, 0))
-                temp = sample['centerness4']
-                batch_centerness4.append(np.expand_dims(temp, 0))
+                    temp = sample['labels4']
+                    batch_labels4.append(np.expand_dims(temp, 0))
+                    temp = sample['reg_target4']
+                    batch_reg_target4.append(np.expand_dims(temp, 0))
+                    temp = sample['centerness4']
+                    batch_centerness4.append(np.expand_dims(temp, 0))
             batch_images = np.concatenate(batch_images, 0)
             batch_labels0 = np.concatenate(batch_labels0, 0)
             batch_reg_target0 = np.concatenate(batch_reg_target0, 0)
@@ -267,12 +272,13 @@ if __name__ == '__main__':
             batch_labels2 = np.concatenate(batch_labels2, 0)
             batch_reg_target2 = np.concatenate(batch_reg_target2, 0)
             batch_centerness2 = np.concatenate(batch_centerness2, 0)
-            batch_labels3 = np.concatenate(batch_labels3, 0)
-            batch_reg_target3 = np.concatenate(batch_reg_target3, 0)
-            batch_centerness3 = np.concatenate(batch_centerness3, 0)
-            batch_labels4 = np.concatenate(batch_labels4, 0)
-            batch_reg_target4 = np.concatenate(batch_reg_target4, 0)
-            batch_centerness4 = np.concatenate(batch_centerness4, 0)
+            if n_features == 5:
+                batch_labels3 = np.concatenate(batch_labels3, 0)
+                batch_reg_target3 = np.concatenate(batch_reg_target3, 0)
+                batch_centerness3 = np.concatenate(batch_centerness3, 0)
+                batch_labels4 = np.concatenate(batch_labels4, 0)
+                batch_reg_target4 = np.concatenate(batch_reg_target4, 0)
+                batch_centerness4 = np.concatenate(batch_centerness4, 0)
 
             batch_images = torch.Tensor(batch_images)
             batch_labels0 = torch.Tensor(batch_labels0)
@@ -284,12 +290,13 @@ if __name__ == '__main__':
             batch_labels2 = torch.Tensor(batch_labels2)
             batch_reg_target2 = torch.Tensor(batch_reg_target2)
             batch_centerness2 = torch.Tensor(batch_centerness2)
-            batch_labels3 = torch.Tensor(batch_labels3)
-            batch_reg_target3 = torch.Tensor(batch_reg_target3)
-            batch_centerness3 = torch.Tensor(batch_centerness3)
-            batch_labels4 = torch.Tensor(batch_labels4)
-            batch_reg_target4 = torch.Tensor(batch_reg_target4)
-            batch_centerness4 = torch.Tensor(batch_centerness4)
+            if n_features == 5:
+                batch_labels3 = torch.Tensor(batch_labels3)
+                batch_reg_target3 = torch.Tensor(batch_reg_target3)
+                batch_centerness3 = torch.Tensor(batch_centerness3)
+                batch_labels4 = torch.Tensor(batch_labels4)
+                batch_reg_target4 = torch.Tensor(batch_reg_target4)
+                batch_centerness4 = torch.Tensor(batch_centerness4)
             if use_gpu:
                 batch_images = batch_images.cuda()
                 batch_labels0 = batch_labels0.cuda()
@@ -301,15 +308,21 @@ if __name__ == '__main__':
                 batch_labels2 = batch_labels2.cuda()
                 batch_reg_target2 = batch_reg_target2.cuda()
                 batch_centerness2 = batch_centerness2.cuda()
-                batch_labels3 = batch_labels3.cuda()
-                batch_reg_target3 = batch_reg_target3.cuda()
-                batch_centerness3 = batch_centerness3.cuda()
-                batch_labels4 = batch_labels4.cuda()
-                batch_reg_target4 = batch_reg_target4.cuda()
-                batch_centerness4 = batch_centerness4.cuda()
-            tag_labels = [batch_labels0, batch_labels1, batch_labels2, batch_labels3, batch_labels4]
-            tag_bboxes = [batch_reg_target0, batch_reg_target1, batch_reg_target2, batch_reg_target3, batch_reg_target4]
-            tag_center = [batch_centerness0, batch_centerness1, batch_centerness2, batch_centerness3, batch_centerness4]
+                if n_features == 5:
+                    batch_labels3 = batch_labels3.cuda()
+                    batch_reg_target3 = batch_reg_target3.cuda()
+                    batch_centerness3 = batch_centerness3.cuda()
+                    batch_labels4 = batch_labels4.cuda()
+                    batch_reg_target4 = batch_reg_target4.cuda()
+                    batch_centerness4 = batch_centerness4.cuda()
+            if n_features == 3:
+                tag_labels = [batch_labels0, batch_labels1, batch_labels2]
+                tag_bboxes = [batch_reg_target0, batch_reg_target1, batch_reg_target2]
+                tag_center = [batch_centerness0, batch_centerness1, batch_centerness2]
+            if n_features == 5:
+                tag_labels = [batch_labels0, batch_labels1, batch_labels2, batch_labels3, batch_labels4]
+                tag_bboxes = [batch_reg_target0, batch_reg_target1, batch_reg_target2, batch_reg_target3, batch_reg_target4]
+                tag_center = [batch_centerness0, batch_centerness1, batch_centerness2, batch_centerness3, batch_centerness4]
             losses = fcos(batch_images, None, eval=False, tag_labels=tag_labels, tag_bboxes=tag_bboxes, tag_centerness=tag_center)
             loss_centerness = losses['loss_centerness']
             loss_cls = losses['loss_cls']
