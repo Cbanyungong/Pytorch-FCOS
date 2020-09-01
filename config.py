@@ -52,6 +52,18 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
 
 
         # ============= 模型相关 =============
+        self.resnet = dict(
+            depth=50,
+            norm_type='affine_channel',
+            feature_maps=[3, 4, 5],
+            use_dcn=False,
+        )
+        self.fpn = dict(
+            num_chan=256,
+        )
+        self.head = dict(
+            batch_size=1,
+        )
         self.fcos_loss = dict(
             loss_alpha=0.25,
             loss_gamma=2.0,

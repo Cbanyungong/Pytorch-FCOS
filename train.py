@@ -91,10 +91,10 @@ if __name__ == '__main__':
     iter_id = 0
 
     # 创建模型
-    resnet = Resnet(50)
-    fpn = FPN()
+    resnet = Resnet(**cfg.resnet)
+    fpn = FPN(**cfg.fpn)
     fcos_loss = FCOSLoss(**cfg.fcos_loss)
-    head = FCOSHead(num_classes=num_classes, fcos_loss=fcos_loss)
+    head = FCOSHead(num_classes=num_classes, fcos_loss=fcos_loss, **cfg.head)
     fcos = FCOS(resnet, fpn, head)
     _decode = Decode(cfg.eval_cfg['conf_thresh'], cfg.eval_cfg['nms_thresh'], fcos, class_names, use_gpu)
 
