@@ -8,6 +8,8 @@
 #
 # ================================================================
 import copy
+
+from config import *
 from tools.cocotools import get_classes, catid2clsid, clsid2catid
 import json
 import torch
@@ -33,32 +35,32 @@ use_gpu = True
 
 
 if __name__ == '__main__':
-    # classes_path = 'data/voc_classes.txt'
-    classes_path = 'data/coco_classes.txt'
-    # model_path可以是'fcos_r50_fpn_multiscale_2x.pt'、'./weights/step00001000.pt'这些。
-    model_path = 'fcos_r50_fpn_multiscale_2x.pt'
-    # model_path = './weights/step00001000.pt'
+    cfg = FCOS_R50_FPN_Multiscale_2x_Config()
 
-    # 验证时的分数阈值和nms_iou阈值
-    conf_thresh = 0.025
-    nms_thresh = 0.6
-    # 是否画出验证集图片
-    draw_image = False
+
+    # 读取的模型
+    model_path = cfg.eval_cfg['model_path']
+
+    # 分数阈值和nms_iou阈值
+    conf_thresh = cfg.eval_cfg['conf_thresh']
+    nms_thresh = cfg.eval_cfg['nms_thresh']
+
+    # 是否给图片画框。
+    draw_image = cfg.eval_cfg['draw_image']
+
     # 验证时的批大小
-    eval_batch_size = 1
+    eval_batch_size = cfg.eval_cfg['eval_batch_size']
 
     # 验证集图片的相对路径
-    # eval_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'
-    # anno_file = 'annotation_json/voc2012_val.json'
-    eval_pre_path = '../COCO/val2017/'
-    anno_file = '../COCO/annotations/instances_val2017.json'
+    eval_pre_path = cfg.val_pre_path
+    anno_file = cfg.val_path
     with open(anno_file, 'r', encoding='utf-8') as f2:
         for line in f2:
             line = line.strip()
             dataset = json.loads(line)
             images = dataset['images']
 
-    all_classes = get_classes(classes_path)
+    all_classes = get_classes(cfg.classes_path)
     num_classes = len(all_classes)
 
     resnet = Resnet(50)

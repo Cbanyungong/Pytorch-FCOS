@@ -42,12 +42,23 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
         )
 
 
-        # 验证
+        # 验证。用于train.py、eval.py、test_dev.py
         self.eval_cfg = dict(
+            model_path='fcos_r50_fpn_multiscale_2x.pt',
+            # model_path='./weights/step00001000.pt',
             conf_thresh=0.025,   # 验证时的分数阈值和nms_iou阈值
             nms_thresh=0.6,
             draw_image=False,    # 是否画出验证集图片
             eval_batch_size=1,   # 验证时的批大小。由于太麻烦，暂时只支持1。
+        )
+
+        # 测试。用于demo.py
+        self.test_cfg = dict(
+            model_path='fcos_r50_fpn_multiscale_2x.pt',
+            # model_path='./weights/step00001000.pt',
+            conf_thresh=0.2,
+            nms_thresh=0.6,
+            draw_image=True,
         )
 
 

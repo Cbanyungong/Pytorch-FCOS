@@ -15,6 +15,7 @@ import time
 import numpy as np
 import torch
 
+from config import *
 from model.decode_np import Decode
 from model.fcos import FCOS
 from model.head import FCOSHead
@@ -35,27 +36,25 @@ use_gpu = True
 
 
 if __name__ == '__main__':
-    # classes_path = 'data/voc_classes.txt'
-    classes_path = 'data/coco_classes.txt'
-    # model_path可以是'fcos_r50_fpn_multiscale_2x.pt'、'./weights/step00001000.pt'这些。
-    model_path = 'fcos_r50_fpn_multiscale_2x.pt'
-    # model_path = './weights/step00001000.pt'
+    cfg = FCOS_R50_FPN_Multiscale_2x_Config()
 
-    # 验证时的分数阈值和nms_iou阈值
-    conf_thresh = 0.025
-    conf_thresh = 0.2
-    nms_thresh = 0.6
 
-    # 是否给图片画框。不画可以提速。读图片、后处理还可以继续优化。
-    draw_image = True
-    # draw_image = False
+    # 读取的模型
+    model_path = cfg.test_cfg['model_path']
 
-    all_classes = get_classes(classes_path)
+    # 分数阈值和nms_iou阈值
+    conf_thresh = cfg.test_cfg['conf_thresh']
+    nms_thresh = cfg.test_cfg['nms_thresh']
+
+    # 是否给图片画框。
+    draw_image = cfg.test_cfg['draw_image']
+
+    all_classes = get_classes(cfg.classes_path)
     num_classes = len(all_classes)
 
-    resnet = Resnet(50)
-    fpn = FPN()
-    head = FCOSHead(num_classes=num_classes)
+    resnet = Resnet(**cfg.resnet)
+    fpn = FPN(**cfg.fpn)
+    head = FCOSHead(num_classes=num_classes, **cfg.head)
     fcos = FCOS(resnet, fpn, head)
     if use_gpu:
         fcos = fcos.cuda()
