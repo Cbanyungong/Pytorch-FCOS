@@ -219,6 +219,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         self.head = dict(
             fpn_stride=[8, 16, 32],
             batch_size=1,
+            centerness_on_reg=True,
         )
         self.fcos_loss_type = 'FCOSLoss'
         self.fcos_loss = dict(

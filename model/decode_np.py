@@ -97,8 +97,8 @@ class Decode(object):
         # ResizeImage。影响FCOS速度的主要原因是图片分辨率过大。
         max_size = 1333
         target_size = 800
-        # target_size = 320
-        # max_size = target_size * (1333.0/800.0)
+        target_size = 320
+        max_size = target_size * (1333.0/800.0)
 
         use_cv2 = True
         interp = 1

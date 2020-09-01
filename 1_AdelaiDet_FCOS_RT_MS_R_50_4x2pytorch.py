@@ -51,14 +51,31 @@ print()
 
 cfg = FCOS_RT_R50_FPN_4x_Config()
 
-resnet = Resnet(**cfg.resnet)
-fpn = FPN(**cfg.fpn)
-head = FCOSSharedHead(num_classes=80, **cfg.head)
-fcos = FCOS(resnet, fpn, head)
+# 创建模型
+Backbone = select_backbone(cfg.backbone_type)
+backbone = Backbone(**cfg.backbone)
 
+Fpn = select_fpn(cfg.fpn_type)
+fpn = Fpn(**cfg.fpn)
+
+Loss = select_loss(cfg.fcos_loss_type)
+fcos_loss = Loss(**cfg.fcos_loss)
+
+Head = select_head(cfg.head_type)
+head = Head(num_classes=80, fcos_loss=fcos_loss, **cfg.head)
+
+fcos = FCOS(backbone, fpn, head)
 
 print('\nCopying...')
 
+
+def copy_conv_bn(conv_unit, w, scale, offset, m, v):
+    conv, bn = conv_unit.conv, conv_unit.bn
+    conv.weight.data = torch.Tensor(w)
+    bn.weight.data = torch.Tensor(scale)
+    bn.bias.data = torch.Tensor(offset)
+    bn.running_mean.data = torch.Tensor(m)
+    bn.running_var.data = torch.Tensor(v)
 
 def copy_conv_af(conv_unit, w, scale, offset):
     conv, af = conv_unit.conv, conv_unit.af
@@ -82,50 +99,54 @@ def copy_conv_gn(conv_unit, w, b, scale, offset):
 
 # 获取FCOS模型的权重
 
+resnet = backbone
 
 # Resnet50
-'''w = dic['conv1_weights']
-scale = dic['bn_conv1_scale']
-offset = dic['bn_conv1_offset']
-copy_conv_af(resnet.conv1, w, scale, offset)
+w = backbone_dic['backbone.bottom_up.stem.conv1.weight']
+scale = backbone_dic['backbone.bottom_up.stem.conv1.norm.weight']
+offset = backbone_dic['backbone.bottom_up.stem.conv1.norm.bias']
+m = backbone_dic['backbone.bottom_up.stem.conv1.norm.running_mean']
+v = backbone_dic['backbone.bottom_up.stem.conv1.norm.running_var']
+copy_conv_bn(resnet.conv1, w, scale, offset, m, v)
 
 
 nums = [3, 4, 6, 3]
 for nid, num in enumerate(nums):
     stage_name = 'res' + str(nid + 2)
     for kk in range(num):
-        block_name = stage_name + chr(ord("a") + kk)
-        conv_name1 = block_name + "_branch2a"
-        conv_name2 = block_name + "_branch2b"
-        conv_name3 = block_name + "_branch2c"
-        shortcut_name = block_name + "_branch1"
+        conv_name1 = 'backbone.bottom_up.%s.%d.conv1' % (stage_name, kk)
+        w = backbone_dic[conv_name1 + '.weight']
+        scale = backbone_dic[conv_name1 + '.norm.weight']
+        offset = backbone_dic[conv_name1 + '.norm.bias']
+        m = backbone_dic[conv_name1 + '.norm.running_mean']
+        v = backbone_dic[conv_name1 + '.norm.running_var']
+        copy_conv_bn(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv1, w, scale, offset, m, v)
 
-        bn_name1 = 'bn' + conv_name1[3:]
-        bn_name2 = 'bn' + conv_name2[3:]
-        bn_name3 = 'bn' + conv_name3[3:]
-        shortcut_bn_name = 'bn' + shortcut_name[3:]
+        conv_name2 = 'backbone.bottom_up.%s.%d.conv2' % (stage_name, kk)
+        w = backbone_dic[conv_name2 + '.weight']
+        scale = backbone_dic[conv_name2 + '.norm.weight']
+        offset = backbone_dic[conv_name2 + '.norm.bias']
+        m = backbone_dic[conv_name2 + '.norm.running_mean']
+        v = backbone_dic[conv_name2 + '.norm.running_var']
+        copy_conv_bn(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv2, w, scale, offset, m, v)
 
-        w = dic[conv_name1 + '_weights']
-        scale = dic[bn_name1 + '_scale']
-        offset = dic[bn_name1 + '_offset']
-        copy_conv_af(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv1, w, scale, offset)
-
-        w = dic[conv_name2 + '_weights']
-        scale = dic[bn_name2 + '_scale']
-        offset = dic[bn_name2 + '_offset']
-        copy_conv_af(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv2, w, scale, offset)
-
-        w = dic[conv_name3 + '_weights']
-        scale = dic[bn_name3 + '_scale']
-        offset = dic[bn_name3 + '_offset']
-        copy_conv_af(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv3, w, scale, offset)
+        conv_name3 = 'backbone.bottom_up.%s.%d.conv3' % (stage_name, kk)
+        w = backbone_dic[conv_name3 + '.weight']
+        scale = backbone_dic[conv_name3 + '.norm.weight']
+        offset = backbone_dic[conv_name3 + '.norm.bias']
+        m = backbone_dic[conv_name3 + '.norm.running_mean']
+        v = backbone_dic[conv_name3 + '.norm.running_var']
+        copy_conv_bn(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv3, w, scale, offset, m, v)
 
         # 每个stage的第一个卷积块才有4个卷积层
         if kk == 0:
-            w = dic[shortcut_name + '_weights']
-            scale = dic[shortcut_bn_name + '_scale']
-            offset = dic[shortcut_bn_name + '_offset']
-            copy_conv_af(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv4, w, scale, offset)'''
+            shortcut_name = 'backbone.bottom_up.%s.%d.shortcut' % (stage_name, kk)
+            w = backbone_dic[shortcut_name + '.weight']
+            scale = backbone_dic[shortcut_name + '.norm.weight']
+            offset = backbone_dic[shortcut_name + '.norm.bias']
+            m = backbone_dic[shortcut_name + '.norm.running_mean']
+            v = backbone_dic[shortcut_name + '.norm.running_var']
+            copy_conv_bn(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv4, w, scale, offset, m, v)
 # fpn, 6个卷积层
 w = fpn_dic['backbone.fpn_lateral5.weight']
 b = fpn_dic['backbone.fpn_lateral5.bias']

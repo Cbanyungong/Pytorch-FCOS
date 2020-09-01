@@ -21,6 +21,8 @@ class ConvBlock(torch.nn.Module):
 
         self.conv1 = Conv2dUnit(in_c,     filters1, 1, stride=1, bn=bn, gn=gn, af=af, act='relu')
         self.conv2 = Conv2dUnit(filters1, filters2, 3, stride=stride, bn=bn, gn=gn, af=af, act='relu', use_dcn=use_dcn)
+        # self.conv1 = Conv2dUnit(in_c,     filters1, 1, stride=stride, bn=bn, gn=gn, af=af, act='relu')
+        # self.conv2 = Conv2dUnit(filters1, filters2, 3, stride=1, bn=bn, gn=gn, af=af, act='relu', use_dcn=use_dcn)
         self.conv3 = Conv2dUnit(filters2, filters3, 1, stride=1, bn=bn, gn=gn, af=af, act=None)
 
         self.conv4 = Conv2dUnit(in_c, filters3, 1, stride=stride, bn=bn, gn=gn, af=af, act=None)
