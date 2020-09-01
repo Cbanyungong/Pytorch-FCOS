@@ -43,14 +43,11 @@ requirements.txt
 
 ## 训练
 下载我从PaddleDetection保存下来的模型fcos_r50_fpn_multiscale_2x.npz
-链接：https://pan.baidu.com/s/xxxxxx
-提取码：xxxxxx
+链接：https://pan.baidu.com/s/1qEcsQyKm2fk-ECBrWrH8HA
+提取码：cq31
 
-将它放在项目根目录下。然后运行1_pytorch2pytorch.py得到一个pytorch_yolov4.pt，它也位于根目录下。
+将它放在项目根目录下。然后运行1_paddle_fcos_r50_fpn_multiscale_2x2pytorch.py得到一个fcos_r50_fpn_multiscale_2x.pt，它也位于根目录下。
 运行train.py进行训练。通过修改config.py代码来进行更换数据集、更改超参数以及训练参数。
-
-追求更高的精度，你需要把冻结层的代码删除。但是需要你有一块高显存的显卡。
-训练时默认每5000步计算一次验证集的mAP。
 
 训练时如果发现mAP很稳定了，就停掉，修改学习率为原来的十分之一，接着继续训练，mAP还会再上升。暂时是这样手动操作。
 
@@ -69,6 +66,7 @@ xxx.jpg 48,240,195,371,11 8,12,352,498,14
 
 ## 评估
 训练时默认每5000步计算一次验证集的mAP。或者运行eval.py评估指定模型的mAP。该mAP是val集的结果。
+fcos_r50_fpn_multiscale_2x.pt在COCO2017 val下的mAP如下：
 ```
 Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.415
 Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.604
@@ -96,10 +94,10 @@ https://competitions.codalab.org/competitions/20794#participate
 Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.xxx
 ```
 
-该mAP是test集的结果，也就是大部分检测算法论文的标准指标。有点谜，根据我之前的经验test集的mAP和val集的mAP应该是差不多的。原因已经找到，由于原版YOLO v4使用coco trainval2014进行训练，训练样本中包含部分评估样本，若使用val集会导致精度虚高。
+该mAP是test集的结果，也就是大部分检测算法论文的标准指标。
 
 ## 预测
-运行demo.py。运行demo_fast.py。
+运行demo.py。
 
 ## 预测视频
 运行demo_video.py。（按esc键停止播放）
