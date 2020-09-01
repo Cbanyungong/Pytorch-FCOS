@@ -11,6 +11,7 @@ import numpy as np
 from paddle import fluid
 import torch
 
+from config import *
 from model.fcos import FCOS
 from model.head import FCOSHead
 from model.neck import FPN
@@ -29,8 +30,8 @@ state_dict = load_weights('FCOS_RT_MS_R_50_4x_syncbn.pth')
 print('============================================================')
 
 backbone_dic = {}
-fpn = {}
-fcos_head = {}
+fpn_dic = {}
+fcos_head_dic = {}
 others = {}
 for key, value in state_dict.items():
     if 'tracked' in key:
@@ -38,9 +39,9 @@ for key, value in state_dict.items():
     if 'bottom_up' in key:
         backbone_dic[key] = value.data.numpy()
     elif 'fpn' in key:
-        fpn[key] = value.data.numpy()
+        fpn_dic[key] = value.data.numpy()
     elif 'fcos_head' in key:
-        fcos_head[key] = value.data.numpy()
+        fcos_head_dic[key] = value.data.numpy()
     else:
         others[key] = value.data.numpy()
 
@@ -48,9 +49,11 @@ print()
 
 
 
-resnet = Resnet(50)
-fpn = FPN()
-head = FCOSHead(num_classes=80)
+cfg = FCOS_RT_R50_FPN_4x_Config()
+
+resnet = Resnet(**cfg.resnet)
+fpn = FPN(**cfg.fpn)
+head = FCOSHead(num_classes=80, **cfg.head)
 fcos = FCOS(resnet, fpn, head)
 
 
@@ -74,8 +77,6 @@ def copy_conv_gn(conv_unit, w, b, scale, offset):
     conv.bias.data = torch.Tensor(b)
     gn.weight.data = torch.Tensor(scale)
     gn.bias.data = torch.Tensor(offset)
-
-dic = np.load('fcos_r50_fpn_multiscale_2x.npz')
 
 
 
@@ -125,52 +126,43 @@ for nid, num in enumerate(nums):
             scale = dic[shortcut_bn_name + '_scale']
             offset = dic[shortcut_bn_name + '_offset']
             copy_conv_af(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv4, w, scale, offset)
-# fpn, 8个卷积层
-w = dic['fpn_inner_res5_sum_w']
-b = dic['fpn_inner_res5_sum_b']
+# fpn, 6个卷积层
+w = fpn_dic['backbone.fpn_lateral5.weight']
+b = fpn_dic['backbone.fpn_lateral5.bias']
 copy_conv(fpn.s32_conv, w, b)
 
-w = dic['fpn_inner_res4_sum_lateral_w']
-b = dic['fpn_inner_res4_sum_lateral_b']
+w = fpn_dic['backbone.fpn_lateral4.weight']
+b = fpn_dic['backbone.fpn_lateral4.bias']
 copy_conv(fpn.s16_conv, w, b)
 
-w = dic['fpn_inner_res3_sum_lateral_w']
-b = dic['fpn_inner_res3_sum_lateral_b']
+w = fpn_dic['backbone.fpn_lateral3.weight']
+b = fpn_dic['backbone.fpn_lateral3.bias']
 copy_conv(fpn.s8_conv, w, b)
 
-w = dic['fpn_res5_sum_w']
-b = dic['fpn_res5_sum_b']
+w = fpn_dic['backbone.fpn_output5.weight']
+b = fpn_dic['backbone.fpn_output5.bias']
 copy_conv(fpn.sc_s32_conv, w, b)
 
-w = dic['fpn_res4_sum_w']
-b = dic['fpn_res4_sum_b']
+w = fpn_dic['backbone.fpn_output4.weight']
+b = fpn_dic['backbone.fpn_output4.bias']
 copy_conv(fpn.sc_s16_conv, w, b)
 
-w = dic['fpn_res3_sum_w']
-b = dic['fpn_res3_sum_b']
+w = fpn_dic['backbone.fpn_output3.weight']
+b = fpn_dic['backbone.fpn_output3.bias']
 copy_conv(fpn.sc_s8_conv, w, b)
-
-w = dic['fpn_6_w']
-b = dic['fpn_6_b']
-copy_conv(fpn.p6_conv, w, b)
-
-w = dic['fpn_7_w']
-b = dic['fpn_7_b']
-copy_conv(fpn.p7_conv, w, b)
 
 
 # head
-n = 5  # 有n个输出层
+n = 3  # 有n个输出层
 num_convs = 4
+ids = [[0, 1], [3, 4], [6, 7], [9, 10]]
 for i in range(n):  # 遍历每个输出层
     for lvl in range(0, num_convs):
         # conv + gn
-        conv_cls_name = 'fcos_head_cls_tower_conv_{}'.format(lvl)
-        norm_name = conv_cls_name + "_norm"
-        w = dic[conv_cls_name + "_weights"]
-        b = dic[conv_cls_name + "_bias"]
-        scale = dic[norm_name + "_scale"]
-        offset = dic[norm_name + "_offset"]
+        w = fcos_head_dic['proposal_generator.fcos_head.cls_tower.0.weight']
+        b = fcos_head_dic['proposal_generator.fcos_head.cls_tower.0.bias']
+        scale = fcos_head_dic['proposal_generator.fcos_head.cls_tower.1.weight']
+        offset = fcos_head_dic['proposal_generator.fcos_head.cls_tower.1.bias']
         copy_conv_gn(head.cls_convs_per_feature[i][lvl], w, b, scale, offset)
 
 

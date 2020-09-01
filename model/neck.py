@@ -16,6 +16,7 @@ from model.custom_layers import Conv2dUnit
 class FPN(torch.nn.Module):
     def __init__(self,
                  num_chan=256,
+                 use_p6p7=True,
                  add_extra_convs=False,
                  extra_convs_on_inputs=True,
                  relu_before_extra_convs=False,
@@ -24,6 +25,7 @@ class FPN(torch.nn.Module):
                  norm_cfg=None,
                  activation=None):
         super(FPN, self).__init__()
+        self.use_p6p7 = use_p6p7
 
         # 对骨干网络的sxx进行卷积
         self.s32_conv = Conv2dUnit(2048, num_chan, 1, stride=1, bias_attr=True, act=None)
@@ -38,8 +40,9 @@ class FPN(torch.nn.Module):
         self.second_convs = [self.sc_s32_conv, self.sc_s16_conv, self.sc_s8_conv]
 
         # p6p7
-        self.p6_conv = Conv2dUnit(num_chan, num_chan, 3, stride=2, bias_attr=True, act=None)
-        self.p7_conv = Conv2dUnit(num_chan, num_chan, 3, stride=2, bias_attr=True, act=None)
+        if self.use_p6p7:
+            self.p6_conv = Conv2dUnit(num_chan, num_chan, 3, stride=2, bias_attr=True, act=None)
+            self.p7_conv = Conv2dUnit(num_chan, num_chan, 3, stride=2, bias_attr=True, act=None)
 
         self.upsample = torch.nn.Upsample(scale_factor=2, mode='nearest')
 
@@ -50,8 +53,9 @@ class FPN(torch.nn.Module):
         self.sc_s32_conv.freeze()
         self.sc_s16_conv.freeze()
         self.sc_s8_conv.freeze()
-        self.p6_conv.freeze()
-        self.p7_conv.freeze()
+        if self.use_p6p7:
+            self.p6_conv.freeze()
+            self.p7_conv.freeze()
 
     def forward(self, body_feats):
         '''
@@ -110,13 +114,17 @@ class FPN(torch.nn.Module):
             fpn_outputs[i] = fpn_output
 
         # p6p7
-        p6_input = fpn_outputs[0]   # p5
-        p6 = self.p6_conv(p6_input)
-        p7 = self.p7_conv(p6)
-
-        outs = [p7, p6] + fpn_outputs   # [s128, s64, s32, s16, s8]
-        spatial_scale = [1. / 128., 1. / 64., 1. / 32., 1. / 16., 1. / 8.]
-        return outs, spatial_scale
+        if self.use_p6p7:
+            p6_input = fpn_outputs[0]   # p5
+            p6 = self.p6_conv(p6_input)
+            p7 = self.p7_conv(p6)
+            outs = [p7, p6] + fpn_outputs   # [p7, p6, p5, p4, p3]
+            spatial_scale = [1. / 128., 1. / 64., 1. / 32., 1. / 16., 1. / 8.]
+            return outs, spatial_scale
+        else:
+            outs = fpn_outputs   # [p5, p4, p3]
+            spatial_scale = [1. / 32., 1. / 16., 1. / 8.]
+            return outs, spatial_scale
 
 
 
