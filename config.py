@@ -173,7 +173,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         self.train_cfg = dict(
             lr=0.0001,   # 每隔几步保存一次模型
             batch_size=1,   # 每隔几步保存一次模型
-            model_path='fcos_r50_fpn_multiscale_2x.pt',
+            model_path='fcos_rt_r50_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
 
             save_iter=1000,   # 每隔几步保存一次模型
@@ -184,7 +184,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
 
         # 验证。用于train.py、eval.py、test_dev.py
         self.eval_cfg = dict(
-            model_path='fcos_r50_fpn_multiscale_2x.pt',
+            model_path='fcos_rt_r50_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
             conf_thresh=0.025,   # 验证时的分数阈值和nms_iou阈值
             nms_thresh=0.6,
@@ -194,7 +194,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
 
         # 测试。用于demo.py
         self.test_cfg = dict(
-            model_path='fcos_r50_fpn_multiscale_2x.pt',
+            model_path='fcos_rt_r50_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
             conf_thresh=0.2,
             nms_thresh=0.6,
