@@ -12,10 +12,10 @@ from paddle import fluid
 import torch
 
 from config import *
-from model.fcos import FCOS
-from model.head import FCOSHead
-from model.neck import FPN
-from model.resnet import Resnet
+from model.fcos import *
+from model.head import *
+from model.neck import *
+from model.resnet import *
 
 
 
@@ -53,7 +53,7 @@ cfg = FCOS_RT_R50_FPN_4x_Config()
 
 resnet = Resnet(**cfg.resnet)
 fpn = FPN(**cfg.fpn)
-head = FCOSHead(num_classes=80, **cfg.head)
+head = FCOSSharedHead(num_classes=80, **cfg.head)
 fcos = FCOS(resnet, fpn, head)
 
 
