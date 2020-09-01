@@ -12,17 +12,19 @@ import torch
 from model.custom_layers import Conv2dUnit
 
 class ConvBlock(torch.nn.Module):
-    def __init__(self, in_c, filters, bn, gn, af, use_dcn=False, stride=2):
+    def __init__(self, in_c, filters, bn, gn, af, use_dcn=False, stride=2, downsample_in3x3=True):
         '''
         ResNetVB的下采样是在中间的3x3卷积层进行。
         '''
         super(ConvBlock, self).__init__()
         filters1, filters2, filters3 = filters
+        if downsample_in3x3 == True:
+            stride1, stride2 = 1, stride
+        else:
+            stride1, stride2 = stride, 1
 
-        self.conv1 = Conv2dUnit(in_c,     filters1, 1, stride=1, bn=bn, gn=gn, af=af, act='relu')
-        self.conv2 = Conv2dUnit(filters1, filters2, 3, stride=stride, bn=bn, gn=gn, af=af, act='relu', use_dcn=use_dcn)
-        # self.conv1 = Conv2dUnit(in_c,     filters1, 1, stride=stride, bn=bn, gn=gn, af=af, act='relu')
-        # self.conv2 = Conv2dUnit(filters1, filters2, 3, stride=1, bn=bn, gn=gn, af=af, act='relu', use_dcn=use_dcn)
+        self.conv1 = Conv2dUnit(in_c,     filters1, 1, stride=stride1, bn=bn, gn=gn, af=af, act='relu')
+        self.conv2 = Conv2dUnit(filters1, filters2, 3, stride=stride2, bn=bn, gn=gn, af=af, act='relu', use_dcn=use_dcn)
         self.conv3 = Conv2dUnit(filters2, filters3, 1, stride=1, bn=bn, gn=gn, af=af, act=None)
 
         self.conv4 = Conv2dUnit(in_c, filters3, 1, stride=stride, bn=bn, gn=gn, af=af, act=None)
@@ -70,7 +72,7 @@ class IdentityBlock(torch.nn.Module):
         return x
 
 class Resnet(torch.nn.Module):
-    def __init__(self, depth, norm_type='affine_channel', feature_maps=[3, 4, 5], use_dcn=False):
+    def __init__(self, depth, norm_type='affine_channel', feature_maps=[3, 4, 5], use_dcn=False, downsample_in3x3=True):
         super(Resnet, self).__init__()
         assert depth in [50, 101]
         self.depth = depth
@@ -91,18 +93,18 @@ class Resnet(torch.nn.Module):
         self.pool = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # stage2
-        self.stage2_0 = ConvBlock(64, [64, 64, 256], bn, gn, af, stride=1)
+        self.stage2_0 = ConvBlock(64, [64, 64, 256], bn, gn, af, stride=1, downsample_in3x3=downsample_in3x3)
         self.stage2_1 = IdentityBlock(256, [64, 64, 256], bn, gn, af)
         self.stage2_2 = IdentityBlock(256, [64, 64, 256], bn, gn, af)
 
         # stage3
-        self.stage3_0 = ConvBlock(256, [128, 128, 512], bn, gn, af, use_dcn=use_dcn)
+        self.stage3_0 = ConvBlock(256, [128, 128, 512], bn, gn, af, use_dcn=use_dcn, downsample_in3x3=downsample_in3x3)
         self.stage3_1 = IdentityBlock(512, [128, 128, 512], bn, gn, af, use_dcn=use_dcn)
         self.stage3_2 = IdentityBlock(512, [128, 128, 512], bn, gn, af, use_dcn=use_dcn)
         self.stage3_3 = IdentityBlock(512, [128, 128, 512], bn, gn, af, use_dcn=use_dcn)
 
         # stage4
-        self.stage4_0 = ConvBlock(512, [256, 256, 1024], bn, gn, af, use_dcn=use_dcn)
+        self.stage4_0 = ConvBlock(512, [256, 256, 1024], bn, gn, af, use_dcn=use_dcn, downsample_in3x3=downsample_in3x3)
         k = 21
         if depth == 50:
             k = 4
@@ -113,7 +115,7 @@ class Resnet(torch.nn.Module):
         self.stage4_last_layer = IdentityBlock(1024, [256, 256, 1024], bn, gn, af, use_dcn=use_dcn)
 
         # stage5
-        self.stage5_0 = ConvBlock(1024, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn)
+        self.stage5_0 = ConvBlock(1024, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn, downsample_in3x3=downsample_in3x3)
         self.stage5_1 = IdentityBlock(2048, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn)
         self.stage5_2 = IdentityBlock(2048, [512, 512, 2048], bn, gn, af, use_dcn=use_dcn)
 

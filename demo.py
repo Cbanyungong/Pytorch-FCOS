@@ -36,7 +36,7 @@ use_gpu = True
 
 
 if __name__ == '__main__':
-    # cfg = FCOS_R50_FPN_Multiscale_2x_Config()
+    cfg = FCOS_R50_FPN_Multiscale_2x_Config()
     cfg = FCOS_RT_R50_FPN_4x_Config()
 
 
@@ -67,7 +67,7 @@ if __name__ == '__main__':
     fcos.load_state_dict(torch.load(model_path))
     fcos.eval()  # 必须调用model.eval()来设置dropout和batch normalization layers在运行推理前，切换到评估模式. 不这样做的化会产生不一致的推理结果.
 
-    _decode = Decode(conf_thresh, nms_thresh, fcos, all_classes, use_gpu)
+    _decode = Decode(conf_thresh, nms_thresh, fcos, all_classes, use_gpu, cfg, for_test=True)
 
     if not os.path.exists('images/res/'): os.mkdir('images/res/')
 

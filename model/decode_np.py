@@ -7,9 +7,11 @@ import threading
 import os
 import numpy as np
 
+from tools.transform import *
+
 
 class Decode(object):
-    def __init__(self, obj_threshold, nms_threshold, _fcos, all_classes, use_gpu):
+    def __init__(self, obj_threshold, nms_threshold, _fcos, all_classes, use_gpu, cfg, for_test=True):
         self._t1 = obj_threshold
         self._t2 = nms_threshold
         self.all_classes = all_classes
@@ -17,11 +19,29 @@ class Decode(object):
         self._fcos = _fcos
         self.use_gpu = use_gpu
 
+        # 图片预处理
+        self.context = cfg.context
+        # sample_transforms
+        self.to_rgb = cfg.decodeImage['to_rgb']
+        self.normalizeImage = NormalizeImage(**cfg.normalizeImage)  # 先除以255归一化，再减均值除以标准差
+        target_size = cfg.eval_cfg['target_size']
+        max_size = cfg.eval_cfg['max_size']
+        if for_test:
+            target_size = cfg.test_cfg['target_size']
+            max_size = cfg.test_cfg['max_size']
+        self.resizeImage = ResizeImage(target_size=target_size,
+                                       max_size=max_size,
+                                       interp=cfg.resizeImage['interp'],
+                                       use_cv2=cfg.resizeImage['use_cv2'])  # 多尺度训练，随机选一个尺度，不破坏原始宽高比地缩放。具体见代码。
+        self.permute = Permute(**cfg.permute)  # 图片从HWC格式变成CHW格式
+        # batch_transforms
+        self.padBatch = PadBatch(**cfg.padBatch)  # 由于ResizeImage()的机制特殊，这一批所有的图片的尺度不一定全相等，所以这里对齐。
+
     # 处理一张图片
     def detect_image(self, image, draw_image):
         pimage, im_info = self.process_image(np.copy(image))
 
-        boxes, scores, classes = self.predict(pimage, im_info, image.shape)
+        boxes, scores, classes = self.predict(pimage, im_info)
         if boxes is not None and draw_image:
             self.draw(image, boxes, scores, classes)
         return image, boxes, scores, classes
@@ -85,88 +105,24 @@ class Decode(object):
                         0.5, (0, 0, 0), 1, lineType=cv2.LINE_AA)
 
     def process_image(self, img):
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        if self.to_rgb:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        context = self.context
+        sample = {}
+        sample['image'] = img
+        sample['h'] = img.shape[0]
+        sample['w'] = img.shape[1]
 
-        # NormalizeImage
-        mean = np.array([0.485, 0.456, 0.406])[np.newaxis, np.newaxis, :].astype(np.float32)
-        std = np.array([0.229, 0.224, 0.225])[np.newaxis, np.newaxis, :].astype(np.float32)
-        pimage = img.astype(np.float32) / 255.
-        pimage -= mean
-        im = pimage / std
+        sample = self.normalizeImage(sample, context)
+        sample = self.resizeImage(sample, context)
+        sample = self.permute(sample, context)
+        samples = self.padBatch([sample], context)
 
-        # ResizeImage。影响FCOS速度的主要原因是图片分辨率过大。
-        max_size = 1333
-        target_size = 800
-        target_size = 320
-        max_size = target_size * (1333.0/800.0)
-
-        use_cv2 = True
-        interp = 1
-        im_shape = im.shape
-        im_size_min = np.min(im_shape[0:2])
-        im_size_max = np.max(im_shape[0:2])
-        if isinstance(target_size, list):
-            # Case for multi-scale training
-            selected_size = random.choice(target_size)
-        else:
-            selected_size = target_size
-        if max_size != 0:
-            im_scale = float(selected_size) / float(im_size_min)
-            # Prevent the biggest axis from being more than max_size
-            if np.round(im_scale * im_size_max) > max_size:
-                im_scale = float(max_size) / float(im_size_max)
-            im_scale_x = im_scale
-            im_scale_y = im_scale
-
-            resize_w = im_scale_x * float(im_shape[1])
-            resize_h = im_scale_y * float(im_shape[0])
-            im_info = [resize_h, resize_w, im_scale]
-            # if 'im_info' in sample and sample['im_info'][2] != 1.:
-            #     sample['im_info'] = np.append(
-            #         list(sample['im_info']), im_info).astype(np.float32)
-            # else:
-            #     sample['im_info'] = np.array(im_info).astype(np.float32)
-        else:
-            im_scale_x = float(selected_size) / float(im_shape[1])
-            im_scale_y = float(selected_size) / float(im_shape[0])
-
-            resize_w = selected_size
-            resize_h = selected_size
-
-        if use_cv2:
-            im = cv2.resize(
-                im,
-                None,
-                None,
-                fx=im_scale_x,
-                fy=im_scale_y,
-                interpolation=interp)
-
-        # Permute
-        im = im.transpose(2, 0, 1)
-
-        # PadBatch
-        use_padded_im_info = True
-        coarsest_stride = 128
-        max_shape = np.array([im.shape]).max(axis=0)
-        if coarsest_stride > 0:
-            max_shape[1] = int(
-                np.ceil(max_shape[1] / coarsest_stride) * coarsest_stride)   # np.ceil()上取整
-            max_shape[2] = int(
-                np.ceil(max_shape[2] / coarsest_stride) * coarsest_stride)   # np.ceil()上取整
-
-        im_c, im_h, im_w = im.shape[:]
-        padding_im = np.zeros(
-            (im_c, max_shape[1], max_shape[2]), dtype=np.float32)
-        padding_im[:, :im_h, :im_w] = im
-        if use_padded_im_info:
-            im_info[:2] = max_shape[1:3]
-
-        pimage = np.expand_dims(padding_im, axis=0)
-        im_info = np.expand_dims(im_info, axis=0)
+        pimage = np.expand_dims(samples[0]['image'], axis=0)
+        im_info = np.expand_dims(samples[0]['im_info'], axis=0)
         return pimage, im_info
 
-    def predict(self, image, im_info, shape):
+    def predict(self, image, im_info):
         image = torch.Tensor(image)
         im_info = torch.Tensor(im_info)
         if self.use_gpu:

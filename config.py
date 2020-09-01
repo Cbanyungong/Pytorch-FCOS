@@ -66,6 +66,8 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
         self.eval_cfg = dict(
             model_path='fcos_r50_fpn_multiscale_2x.pt',
             # model_path='./weights/step00001000.pt',
+            target_size=800,
+            max_size=1333,
             conf_thresh=0.025,   # 验证时的分数阈值和nms_iou阈值
             nms_thresh=0.6,
             draw_image=False,    # 是否画出验证集图片
@@ -76,7 +78,9 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
         self.test_cfg = dict(
             model_path='fcos_r50_fpn_multiscale_2x.pt',
             # model_path='./weights/step00001000.pt',
-            conf_thresh=0.2,
+            target_size=800,
+            max_size=1333,
+            conf_thresh=0.1,
             nms_thresh=0.6,
             draw_image=True,
         )
@@ -139,7 +143,7 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
         )
         # PadBatch
         self.padBatch = dict(
-            pad_to_stride=128,
+            pad_to_stride=128,   # 添加黑边使得图片边长能够被pad_to_stride整除。pad_to_stride代表着最大下采样倍率，这个模型最大到p7，为128。
             use_padded_im_info=False,
         )
         # Gt2FCOSTarget
@@ -186,6 +190,8 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         self.eval_cfg = dict(
             model_path='fcos_rt_r50_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
+            target_size=512,
+            max_size=736,
             conf_thresh=0.025,   # 验证时的分数阈值和nms_iou阈值
             nms_thresh=0.6,
             draw_image=False,    # 是否画出验证集图片
@@ -196,6 +202,8 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         self.test_cfg = dict(
             model_path='fcos_rt_r50_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
+            target_size=512,
+            max_size=736,
             conf_thresh=0.2,
             nms_thresh=0.6,
             draw_image=True,
@@ -209,6 +217,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
             norm_type='bn',
             feature_maps=[3, 4, 5],
             use_dcn=False,
+            downsample_in3x3=False,   # 注意这个细节，是在1x1卷积层下采样的。
         )
         self.fpn_type = 'FPN'
         self.fpn = dict(
@@ -234,7 +243,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         self.context = {'fields': ['image', 'im_info', 'fcos_target']}
         # DecodeImage
         self.decodeImage = dict(
-            to_rgb=True,
+            to_rgb=False,   # AdelaiDet里使用了BGR格式
             with_mixup=False,
         )
         # RandomFlipImage
@@ -244,15 +253,15 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         # NormalizeImage
         self.normalizeImage = dict(
             is_channel_first=False,
-            is_scale=True,
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225],
+            is_scale=False,
+            mean=[103.53, 116.28, 123.675],   # BGR的均值
+            std=[1.0, 1.0, 1.0],
         )
         # ResizeImage
         self.resizeImage = dict(
-            target_size=[640, 672, 704, 736, 768, 800],
-            max_size=1333,
-            interp=1,
+            target_size=[256, 288, 320, 352, 384, 416, 448, 480, 512, 544, 576, 608],
+            max_size=900,
+            interp=2,
             use_cv2=True,
         )
         # Permute
@@ -262,14 +271,14 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         )
         # PadBatch
         self.padBatch = dict(
-            pad_to_stride=128,
+            pad_to_stride=32,   # 添加黑边使得图片边长能够被pad_to_stride整除。pad_to_stride代表着最大下采样倍率，这个模型最大到p5，为32。
             use_padded_im_info=False,
         )
         # Gt2FCOSTarget
         self.gt2FCOSTarget = dict(
-            object_sizes_boundary=[64, 128, 256, 512],
+            object_sizes_boundary=[64, 128],
             center_sampling_radius=1.5,
-            downsample_ratios=[8, 16, 32, 64, 128],
+            downsample_ratios=[8, 16, 32],
             norm_reg_targets=True,
         )
 

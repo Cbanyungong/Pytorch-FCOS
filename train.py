@@ -100,7 +100,7 @@ if __name__ == '__main__':
     head = Head(num_classes=num_classes, fcos_loss=fcos_loss, **cfg.head)
 
     fcos = FCOS(backbone, fpn, head)
-    _decode = Decode(cfg.eval_cfg['conf_thresh'], cfg.eval_cfg['nms_thresh'], fcos, class_names, use_gpu)
+    _decode = Decode(cfg.eval_cfg['conf_thresh'], cfg.eval_cfg['nms_thresh'], fcos, class_names, use_gpu, cfg, for_test=False)
 
     # 加载权重
     if cfg.train_cfg['model_path'] is not None:

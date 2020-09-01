@@ -515,54 +515,6 @@ class NormalizeBox(BaseOperator):
         sample['gt_bbox'] = gt_bbox
         return sample
 
-class PadBox(BaseOperator):
-    def __init__(self, num_max_boxes=50):
-        """
-        Pad zeros to bboxes if number of bboxes is less than num_max_boxes.
-        Args:
-            num_max_boxes (int): the max number of bboxes
-        """
-        self.num_max_boxes = num_max_boxes
-        super(PadBox, self).__init__()
-
-    def __call__(self, sample, context=None):
-        assert 'gt_bbox' in sample
-        bbox = sample['gt_bbox']
-        gt_num = min(self.num_max_boxes, len(bbox))
-        num_max = self.num_max_boxes
-        fields = context['fields'] if context else []
-        pad_bbox = np.zeros((num_max, 4), dtype=np.float32)
-        if gt_num > 0:
-            pad_bbox[:gt_num, :] = bbox[:gt_num, :]
-        sample['gt_bbox'] = pad_bbox
-
-        # 掩码
-        # mask = sample['gt_mask']
-        # pad_mask = np.zeros((mask.shape[0], mask.shape[1], num_max), dtype=np.float32)
-        # if gt_num > 0:
-        #     pad_mask[:, :, :gt_num] = mask[:, :, :gt_num]
-        # sample['gt_mask'] = pad_mask
-
-        if 'gt_class' in fields:
-            pad_class = np.zeros((num_max), dtype=np.int32)
-            if gt_num > 0:
-                pad_class[:gt_num] = sample['gt_class'][:gt_num, 0]
-            sample['gt_class'] = pad_class
-        if 'gt_score' in fields:
-            pad_score = np.zeros((num_max), dtype=np.float32)
-            if gt_num > 0:
-                pad_score[:gt_num] = sample['gt_score'][:gt_num, 0]
-            sample['gt_score'] = pad_score
-        # in training, for example in op ExpandImage,
-        # the bbox and gt_class is expandded, but the difficult is not,
-        # so, judging by it's length
-        if 'is_difficult' in fields:
-            pad_diff = np.zeros((num_max), dtype=np.int32)
-            if gt_num > 0:
-                pad_diff[:gt_num] = sample['difficult'][:gt_num, 0]
-            sample['difficult'] = pad_diff
-        return sample
-
 class BboxXYXY2XYWH(BaseOperator):
     """
     Convert bbox XYXY format to XYWH format.
@@ -579,51 +531,6 @@ class BboxXYXY2XYWH(BaseOperator):
         sample['gt_bbox'] = bbox
         return sample
 
-class RandomShape(BaseOperator):
-    """
-    Randomly reshape a batch. If random_inter is True, also randomly
-    select one an interpolation algorithm [cv2.INTER_NEAREST, cv2.INTER_LINEAR,
-    cv2.INTER_AREA, cv2.INTER_CUBIC, cv2.INTER_LANCZOS4]. If random_inter is
-    False, use cv2.INTER_NEAREST.
-
-    Args:
-        sizes (list): list of int, random choose a size from these
-        random_inter (bool): whether to randomly interpolation, defalut true.
-    """
-
-    def __init__(self, sizes=[320, 352, 384, 416, 448, 480, 512, 544, 576, 608], random_inter=True):
-        super(RandomShape, self).__init__()
-        self.sizes = sizes
-        self.random_inter = random_inter
-        self.interps = [
-            cv2.INTER_NEAREST,
-            cv2.INTER_LINEAR,
-            cv2.INTER_AREA,
-            cv2.INTER_CUBIC,
-            cv2.INTER_LANCZOS4,
-        ] if random_inter else []
-
-    def __call__(self, samples, context=None):
-        shape = np.random.choice(self.sizes)
-        # mask_shape = shape // 4
-        method = np.random.choice(self.interps) if self.random_inter \
-            else cv2.INTER_NEAREST
-        for i in range(len(samples)):
-            im = samples[i]['image']
-            h, w = im.shape[:2]
-            scale_x = float(shape) / w
-            scale_y = float(shape) / h
-            im = cv2.resize(
-                im, None, None, fx=scale_x, fy=scale_y, interpolation=method)
-            samples[i]['image'] = im
-
-            # gt_mask = samples[i]['gt_mask']
-            # 4倍下采样。与4倍下采样的特征图计算损失。
-            # 不能随机插值方法，有的方法不适合50个通道。
-            # gt_mask = cv2.resize(gt_mask, (mask_shape, mask_shape), interpolation=cv2.INTER_LINEAR)
-            # gt_mask = (gt_mask > 0.5).astype(np.float32)
-            # samples[i]['gt_mask'] = gt_mask
-        return samples
 
 class NormalizeImage(BaseOperator):
     def __init__(self,
