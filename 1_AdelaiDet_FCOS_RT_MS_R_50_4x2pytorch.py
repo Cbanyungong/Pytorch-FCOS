@@ -84,7 +84,7 @@ def copy_conv_gn(conv_unit, w, b, scale, offset):
 
 
 # Resnet50
-w = dic['conv1_weights']
+'''w = dic['conv1_weights']
 scale = dic['bn_conv1_scale']
 offset = dic['bn_conv1_offset']
 copy_conv_af(resnet.conv1, w, scale, offset)
@@ -125,7 +125,7 @@ for nid, num in enumerate(nums):
             w = dic[shortcut_name + '_weights']
             scale = dic[shortcut_bn_name + '_scale']
             offset = dic[shortcut_bn_name + '_offset']
-            copy_conv_af(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv4, w, scale, offset)
+            copy_conv_af(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv4, w, scale, offset)'''
 # fpn, 6个卷积层
 w = fpn_dic['backbone.fpn_lateral5.weight']
 b = fpn_dic['backbone.fpn_lateral5.bias']
@@ -153,57 +153,50 @@ copy_conv(fpn.sc_s8_conv, w, b)
 
 
 # head
-n = 3  # 有n个输出层
 num_convs = 4
 ids = [[0, 1], [3, 4], [6, 7], [9, 10]]
-for i in range(n):  # 遍历每个输出层
-    for lvl in range(0, num_convs):
-        # conv + gn
-        w = fcos_head_dic['proposal_generator.fcos_head.cls_tower.0.weight']
-        b = fcos_head_dic['proposal_generator.fcos_head.cls_tower.0.bias']
-        scale = fcos_head_dic['proposal_generator.fcos_head.cls_tower.1.weight']
-        offset = fcos_head_dic['proposal_generator.fcos_head.cls_tower.1.bias']
-        copy_conv_gn(head.cls_convs_per_feature[i][lvl], w, b, scale, offset)
+for lvl in range(0, num_convs):
+    # conv + gn
+    w = fcos_head_dic['proposal_generator.fcos_head.cls_tower.%d.weight'%ids[lvl][0]]
+    b = fcos_head_dic['proposal_generator.fcos_head.cls_tower.%d.bias'%ids[lvl][0]]
+    scale = fcos_head_dic['proposal_generator.fcos_head.cls_tower.%d.weight'%ids[lvl][1]]
+    offset = fcos_head_dic['proposal_generator.fcos_head.cls_tower.%d.bias'%ids[lvl][1]]
+    copy_conv_gn(head.cls_convs[lvl], w, b, scale, offset)
 
 
-        # conv + gn
-        conv_reg_name = 'fcos_head_reg_tower_conv_{}'.format(lvl)
-        norm_name = conv_reg_name + "_norm"
-        w = dic[conv_reg_name + "_weights"]
-        b = dic[conv_reg_name + "_bias"]
-        scale = dic[norm_name + "_scale"]
-        offset = dic[norm_name + "_offset"]
-        copy_conv_gn(head.reg_convs_per_feature[i][lvl], w, b, scale, offset)
+    # conv + gn
+    w = fcos_head_dic['proposal_generator.fcos_head.bbox_tower.%d.weight'%ids[lvl][0]]
+    b = fcos_head_dic['proposal_generator.fcos_head.bbox_tower.%d.bias'%ids[lvl][0]]
+    scale = fcos_head_dic['proposal_generator.fcos_head.bbox_tower.%d.weight'%ids[lvl][1]]
+    offset = fcos_head_dic['proposal_generator.fcos_head.bbox_tower.%d.bias'%ids[lvl][1]]
+    copy_conv_gn(head.reg_convs[lvl], w, b, scale, offset)
 
-    # 类别分支最后的conv
-    conv_cls_name = "fcos_head_cls"
-    w = dic[conv_cls_name + "_weights"]
-    b = dic[conv_cls_name + "_bias"]
-    copy_conv(head.cls_convs_per_feature[i][-1], w, b)
+# 类别分支最后的conv
+w = fcos_head_dic['proposal_generator.fcos_head.cls_logits.weight']
+b = fcos_head_dic['proposal_generator.fcos_head.cls_logits.bias']
+copy_conv(head.cls_convs[-1], w, b)
 
-    # 坐标分支最后的conv
-    conv_reg_name = "fcos_head_reg"
-    w = dic[conv_reg_name + "_weights"]
-    b = dic[conv_reg_name + "_bias"]
-    copy_conv(head.reg_convs_per_feature[i][-1], w, b)
+# 坐标分支最后的conv
+w = fcos_head_dic['proposal_generator.fcos_head.bbox_pred.weight']
+b = fcos_head_dic['proposal_generator.fcos_head.bbox_pred.bias']
+copy_conv(head.reg_convs[-1], w, b)
 
-    # centerness分支最后的conv
-    conv_centerness_name = "fcos_head_centerness"
-    w = dic[conv_centerness_name + "_weights"]
-    b = dic[conv_centerness_name + "_bias"]
-    copy_conv(head.ctn_convs_per_feature[i], w, b)
+# centerness分支最后的conv
+w = fcos_head_dic['proposal_generator.fcos_head.ctrness.weight']
+b = fcos_head_dic['proposal_generator.fcos_head.ctrness.bias']
+copy_conv(head.ctn_conv, w, b)
 
-# 5个scale
-fpn_names = ['fpn_7', 'fpn_6', 'fpn_res5_sum', 'fpn_res4_sum', 'fpn_res3_sum']
-i = 0
-for fpn_name in fpn_names:
-    scale_i = dic["%s_scale_on_reg" % fpn_name]
-    head.scales_on_reg[i].data = torch.Tensor(scale_i)
-    i += 1
+# 3个scale
+scale_i = fcos_head_dic['proposal_generator.fcos_head.scales.0.scale']
+head.scales_on_reg[0].data = torch.Tensor(scale_i)
+scale_i = fcos_head_dic['proposal_generator.fcos_head.scales.1.scale']
+head.scales_on_reg[1].data = torch.Tensor(scale_i)
+scale_i = fcos_head_dic['proposal_generator.fcos_head.scales.2.scale']
+head.scales_on_reg[2].data = torch.Tensor(scale_i)
 
 
 
-torch.save(fcos.state_dict(), 'fcos_r50_fpn_multiscale_2x.pt')
+torch.save(fcos.state_dict(), 'fcos_rt_r50_fpn_4x.pt')
 print('\nDone.')
 
 

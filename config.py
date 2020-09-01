@@ -60,18 +60,22 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
 
 
         # ============= 模型相关 =============
-        self.resnet = dict(
+        self.backbone_type = 'Resnet'
+        self.backbone = dict(
             depth=50,
             norm_type='affine_channel',
             feature_maps=[3, 4, 5],
             use_dcn=False,
         )
+        self.fpn_type = 'FPN'
         self.fpn = dict(
             num_chan=256,
         )
+        self.head_type = 'FCOSHead'
         self.head = dict(
             batch_size=1,
         )
+        self.fcos_loss_type = 'FCOSLoss'
         self.fcos_loss = dict(
             loss_alpha=0.25,
             loss_gamma=2.0,
@@ -176,20 +180,24 @@ class FCOS_RT_R50_FPN_4x_Config(object):
 
 
         # ============= 模型相关 =============
-        self.resnet = dict(
+        self.backbone_type = 'Resnet'
+        self.backbone = dict(
             depth=50,
             norm_type='bn',
             feature_maps=[3, 4, 5],
             use_dcn=False,
         )
+        self.fpn_type = 'FPN'
         self.fpn = dict(
             num_chan=256,
             use_p6p7=False,
         )
+        self.head_type = 'FCOSSharedHead'
         self.head = dict(
             fpn_stride=[8, 16, 32],
             batch_size=1,
         )
+        self.fcos_loss_type = 'FCOSLoss'
         self.fcos_loss = dict(
             loss_alpha=0.25,
             loss_gamma=2.0,

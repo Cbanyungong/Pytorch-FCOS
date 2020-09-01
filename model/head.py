@@ -306,7 +306,7 @@ class FCOSSharedHead(torch.nn.Module):
                  #     nms_threshold=0.45,
                  #     background_label=-1).__dict__
                  ):
-        super(FCOSHead, self).__init__()
+        super(FCOSSharedHead, self).__init__()
         self.num_classes = num_classes
         self.fpn_stride = fpn_stride[::-1]
         self.prior_prob = prior_prob
@@ -323,36 +323,31 @@ class FCOSSharedHead(torch.nn.Module):
 
 
         self.scales_on_reg = torch.nn.ParameterList()       # 回归分支（预测框坐标）的系数
-        self.cls_convs_per_feature = torch.nn.ModuleList()   # 每个fpn输出特征图再进行卷积的卷积层，用于预测类别
-        self.reg_convs_per_feature = torch.nn.ModuleList()   # 每个fpn输出特征图再进行卷积的卷积层，用于预测坐标
-        self.ctn_convs_per_feature = torch.nn.ModuleList()   # 用于预测centerness
+        self.cls_convs = torch.nn.ModuleList()   # 每个fpn输出特征图  共享的  再进行卷积的卷积层，用于预测类别
+        self.reg_convs = torch.nn.ModuleList()   # 每个fpn输出特征图  共享的  再进行卷积的卷积层，用于预测坐标
+        self.ctn_conv = Conv2dUnit(256, 1, 3, stride=1, bias_attr=True, act=None)   # 用于预测centerness
+
+        # 每个fpn输出特征图  共享的  卷积层。
+        for lvl in range(0, self.num_convs):
+            # 使用gn，组数是32，而且带激活relu
+            cls_conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
+            self.cls_convs.append(cls_conv_layer)
+            reg_conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
+            self.reg_convs.append(reg_conv_layer)
+        # 类别分支最后的卷积。设置偏移的初始值使得各类别预测概率初始值为self.prior_prob (根据激活函数是sigmoid()时推导出，和RetinaNet中一样)
+        bias_init_value = -math.log((1 - self.prior_prob) / self.prior_prob)
+        cls_last_conv_layer = Conv2dUnit(256, self.num_classes, 3, stride=1, bias_attr=True, act=None)
+        torch.nn.init.constant_(cls_last_conv_layer.conv.bias, bias_init_value)
+        # 坐标分支最后的卷积
+        reg_last_conv_layer = Conv2dUnit(256, 4, 3, stride=1, bias_attr=True, act=None)
+        self.cls_convs.append(cls_last_conv_layer)
+        self.reg_convs.append(reg_last_conv_layer)
+
+
         n = len(self.fpn_stride)      # 有n个输出层
         for i in range(n):     # 遍历每个输出层
             scale = torch.nn.Parameter(torch.ones(1, ))
             self.scales_on_reg.append(scale)
-            cls_convs_this_feature = torch.nn.ModuleList()   # 这个fpn输出特征图再进行卷积的卷积层，用于预测类别
-            reg_convs_this_feature = torch.nn.ModuleList()   # 这个fpn输出特征图再进行卷积的卷积层，用于预测坐标
-            for lvl in range(0, self.num_convs):
-                # 使用gn，组数是32，而且带激活relu
-                cls_conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
-                cls_convs_this_feature.append(cls_conv_layer)
-                reg_conv_layer = Conv2dUnit(256, 256, 3, stride=1, bias_attr=True, gn=1, groups=32, act='relu')
-                reg_convs_this_feature.append(reg_conv_layer)
-
-            # 类别分支最后的卷积。设置偏移的初始值使得各类别预测概率初始值为self.prior_prob (根据激活函数是sigmoid()时推导出，和RetinaNet中一样)
-            bias_init_value = -math.log((1 - self.prior_prob) / self.prior_prob)
-            cls_last_conv_layer = Conv2dUnit(256, self.num_classes, 3, stride=1, bias_attr=True, act=None)
-            torch.nn.init.constant_(cls_last_conv_layer.conv.bias, bias_init_value)
-            # 坐标分支最后的卷积
-            reg_last_conv_layer = Conv2dUnit(256, 4, 3, stride=1, bias_attr=True, act=None)
-            # centerness分支
-            ctn_last_conv_layer = Conv2dUnit(256, 1, 3, stride=1, bias_attr=True, act=None)
-
-            cls_convs_this_feature.append(cls_last_conv_layer)
-            reg_convs_this_feature.append(reg_last_conv_layer)
-            self.cls_convs_per_feature.append(cls_convs_this_feature)
-            self.reg_convs_per_feature.append(reg_convs_this_feature)
-            self.ctn_convs_per_feature.append(ctn_last_conv_layer)
 
         self.relu = torch.nn.ReLU()
 
@@ -371,12 +366,12 @@ class FCOSSharedHead(torch.nn.Module):
         # else:
         #     conv_norm = ConvNorm
         for lvl in range(0, self.num_convs):
-            subnet_blob_cls = self.cls_convs_per_feature[i][lvl](subnet_blob_cls)
-            subnet_blob_reg = self.reg_convs_per_feature[i][lvl](subnet_blob_reg)
+            subnet_blob_cls = self.cls_convs[lvl](subnet_blob_cls)
+            subnet_blob_reg = self.reg_convs[lvl](subnet_blob_reg)
 
 
-        cls_logits = self.cls_convs_per_feature[i][-1](subnet_blob_cls)   # 通道数变成类别数
-        bbox_reg = self.reg_convs_per_feature[i][-1](subnet_blob_reg)     # 通道数变成4
+        cls_logits = self.cls_convs[-1](subnet_blob_cls)   # 通道数变成类别数
+        bbox_reg = self.reg_convs[-1](subnet_blob_reg)     # 通道数变成4
         bbox_reg = bbox_reg * fpn_scale     # 预测坐标的特征图整体乘上fpn_scale，是一个可学习参数
         # 如果 归一化坐标分支，bbox_reg进行relu激活
         if self.norm_reg_targets:
@@ -389,9 +384,9 @@ class FCOSSharedHead(torch.nn.Module):
 
         # ============= centerness分支，默认是用坐标分支接4个卷积层之后的结果subnet_blob_reg =============
         if self.centerness_on_reg:
-            centerness = self.ctn_convs_per_feature[i](subnet_blob_reg)
+            centerness = self.ctn_conv(subnet_blob_reg)
         else:
-            centerness = self.ctn_convs_per_feature[i](subnet_blob_cls)
+            centerness = self.ctn_conv(subnet_blob_cls)
         return cls_logits, bbox_reg, centerness
 
     def _get_output(self, body_feats, is_training=False):

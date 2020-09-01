@@ -17,10 +17,10 @@ import torch
 
 from config import *
 from model.decode_np import Decode
-from model.fcos import FCOS
-from model.head import FCOSHead
-from model.neck import FPN
-from model.resnet import Resnet
+from model.fcos import *
+from model.head import *
+from model.neck import *
+from model.resnet import *
 from tools.cocotools import get_classes
 
 import logging
