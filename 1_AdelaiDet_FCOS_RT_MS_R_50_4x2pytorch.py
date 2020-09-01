@@ -28,6 +28,23 @@ def load_weights(path):
 state_dict = load_weights('FCOS_RT_MS_R_50_4x_syncbn.pth')
 print('============================================================')
 
+backbone_dic = {}
+fpn = {}
+fcos_head = {}
+others = {}
+for key, value in state_dict.items():
+    if 'tracked' in key:
+        continue
+    if 'bottom_up' in key:
+        backbone_dic[key] = value.data.numpy()
+    elif 'fpn' in key:
+        fpn[key] = value.data.numpy()
+    elif 'fcos_head' in key:
+        fcos_head[key] = value.data.numpy()
+    else:
+        others[key] = value.data.numpy()
+
+print()
 
 
 

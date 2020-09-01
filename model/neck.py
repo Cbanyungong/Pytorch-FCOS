@@ -57,6 +57,31 @@ class FPN(torch.nn.Module):
         '''
         :param body_feats:  [s8, s16, s32]
         :return:
+                                     bs32
+                                      |
+                                     卷积
+                                      |
+                             bs16   [fs32]
+                              |       |
+                            卷积    上采样
+                              |       |
+                          lateral   topdown
+                               \    /
+                                相加
+                                  |
+                        bs8     [fs16]
+                         |        |
+                        卷积    上采样
+                         |        |
+                      lateral   topdown
+                            \    /
+                             相加
+                               |
+                             [fs8]
+
+                fpn_inner_output = [fs32, fs16, fs8]
+        然后  fs32, fs16, fs8  分别再接一个卷积得到 p5, p4, p3 ；
+        p5 接一个卷积得到 p6， p6 接一个卷积得到 p7。
         '''
         reverse_body_feats = body_feats[::-1]   #   [s32, s16, s8]
 
@@ -64,7 +89,7 @@ class FPN(torch.nn.Module):
         # fpn内部的输出
         fpn_inner_output = [None for _ in range(num_backbone_stages)]
 
-        body_input = reverse_body_feats[0]   # 骨干网络的s32
+        body_input = reverse_body_feats[0]   # 骨干网络的s32。先接一个卷积
         fpn_inner_output[0] = self.convs[0](body_input)   # fpn的s32
         for i in range(1, num_backbone_stages):
             body_input = reverse_body_feats[i]     # 骨干网络的s16
@@ -85,7 +110,7 @@ class FPN(torch.nn.Module):
             fpn_outputs[i] = fpn_output
 
         # p6p7
-        p6_input = fpn_outputs[0]   # fpn的s32
+        p6_input = fpn_outputs[0]   # p5
         p6 = self.p6_conv(p6_input)
         p7 = self.p7_conv(p6)
 
