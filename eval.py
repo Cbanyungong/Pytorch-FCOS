@@ -63,10 +63,15 @@ if __name__ == '__main__':
     all_classes = get_classes(cfg.classes_path)
     num_classes = len(all_classes)
 
-    resnet = Resnet(50)
-    fpn = FPN()
-    head = FCOSHead(num_classes=num_classes)
-    fcos = FCOS(resnet, fpn, head)
+
+    # 创建模型
+    Backbone = select_backbone(cfg.backbone_type)
+    backbone = Backbone(**cfg.backbone)
+    Fpn = select_fpn(cfg.fpn_type)
+    fpn = Fpn(**cfg.fpn)
+    Head = select_head(cfg.head_type)
+    head = Head(num_classes=num_classes, **cfg.head)
+    fcos = FCOS(backbone, fpn, head)
     if use_gpu:
         fcos = fcos.cuda()
     fcos.load_state_dict(torch.load(model_path))
