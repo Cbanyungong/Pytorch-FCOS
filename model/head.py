@@ -291,6 +291,7 @@ class FCOSSharedHead(torch.nn.Module):
     def __init__(self,
                  num_classes,
                  fpn_stride=[8, 16, 32, 64, 128],
+                 thresh_with_ctr=True,
                  prior_prob=0.01,
                  num_convs=4,
                  batch_size=1,
@@ -309,6 +310,7 @@ class FCOSSharedHead(torch.nn.Module):
         super(FCOSSharedHead, self).__init__()
         self.num_classes = num_classes
         self.fpn_stride = fpn_stride[::-1]
+        self.thresh_with_ctr = thresh_with_ctr
         self.prior_prob = prior_prob
         self.num_convs = num_convs
         self.norm_reg_targets = norm_reg_targets
@@ -484,7 +486,8 @@ class FCOSSharedHead(torch.nn.Module):
         im_scale = im_info[:, 2]  # [N, ]
         im_scale = im_scale[:, np.newaxis, np.newaxis]  # [N, 1, 1]
         box_reg_decoding = box_reg_decoding / im_scale  # [N, H*W, 4]，最终坐标=坐标*图片缩放因子
-        box_cls_ch_last = box_cls_ch_last * box_ctn_ch_last  # [N, 80, H*W]，最终分数=类别概率*centerness
+        if self.thresh_with_ctr:
+            box_cls_ch_last = box_cls_ch_last * box_ctn_ch_last  # [N, 80, H*W]，最终分数=类别概率*centerness
         return box_cls_ch_last, box_reg_decoding
 
     def _post_processing(self, locations, cls_logits, bboxes_reg, centerness,

@@ -207,13 +207,13 @@ w = fcos_head_dic['proposal_generator.fcos_head.ctrness.weight']
 b = fcos_head_dic['proposal_generator.fcos_head.ctrness.bias']
 copy_conv(head.ctn_conv, w, b)
 
-# 3个scale
+# 3个scale。请注意，AdelaiDet在head部分是从小感受野到大感受野遍历，而PaddleDetection是从大感受野到小感受野遍历。所以这里scale顺序反过来。
 scale_i = fcos_head_dic['proposal_generator.fcos_head.scales.0.scale']
-head.scales_on_reg[0].data = torch.Tensor(scale_i)
+head.scales_on_reg[2].data = torch.Tensor(scale_i)
 scale_i = fcos_head_dic['proposal_generator.fcos_head.scales.1.scale']
 head.scales_on_reg[1].data = torch.Tensor(scale_i)
 scale_i = fcos_head_dic['proposal_generator.fcos_head.scales.2.scale']
-head.scales_on_reg[2].data = torch.Tensor(scale_i)
+head.scales_on_reg[0].data = torch.Tensor(scale_i)
 
 
 

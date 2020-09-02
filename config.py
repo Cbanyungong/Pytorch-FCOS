@@ -227,6 +227,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         self.head_type = 'FCOSSharedHead'
         self.head = dict(
             fpn_stride=[8, 16, 32],
+            thresh_with_ctr=False,   # AdelaiDet的这个模型在计算最终分数时不乘以centerness
             batch_size=1,
             centerness_on_reg=True,
         )
