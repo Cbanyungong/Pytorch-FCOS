@@ -116,10 +116,11 @@ class Tree(nn.Module):
 
 
 class DLA(torch.nn.Module):
-    def __init__(self, norm_type, levels, channels, block=BasicBlock, residual_root=False):
+    def __init__(self, norm_type, levels, channels, block=BasicBlock, residual_root=False, feature_maps=[3, 4, 5]):
         super(DLA, self).__init__()
         self.norm_type = norm_type
         self.channels = channels
+        self.feature_maps = feature_maps
 
         self._out_features = ["level{}".format(i) for i in range(6)]   # 每个特征图的名字
         self._out_feature_channels = {k: channels[i] for i, k in enumerate(self._out_features)}   # 每个特征图的输出通道数
@@ -153,14 +154,14 @@ class DLA(torch.nn.Module):
         return nn.Sequential(*modules)
 
     def forward(self, x):
-        y = {}
+        outs = []
         x = self.base_layer(x)
         for i in range(6):
             name = 'level{}'.format(i)
             x = getattr(self, name)(x)
-            y[name] = x
-        aaa = [y['level3'], y['level4'], y['level5']]
-        return aaa
+            if i in self.feature_maps:
+                outs.append(x)
+        return outs
 
 
 def dla34(norm_type, pretrained=None, **kwargs):  # DLA-34
