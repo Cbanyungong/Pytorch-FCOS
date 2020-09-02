@@ -230,7 +230,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         self.head_type = 'FCOSSharedHead'
         self.head = dict(
             fpn_stride=[8, 16, 32],
-            thresh_with_ctr=False,   # AdelaiDet的这个模型在计算最终分数时不乘以centerness
+            thresh_with_ctr=True,   # AdelaiDet的这个模型在预测时设为False，这里发现True能取得更高的AP。
             batch_size=1,
             centerness_on_reg=True,
         )
@@ -358,7 +358,7 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
         self.head_type = 'FCOSSharedHead'
         self.head = dict(
             fpn_stride=[8, 16, 32],
-            thresh_with_ctr=False,   # AdelaiDet的这个模型在计算最终分数时不乘以centerness
+            thresh_with_ctr=True,   # AdelaiDet的这个模型在预测时设为False，这里发现True能取得更高的AP。
             batch_size=1,
             centerness_on_reg=True,
         )
