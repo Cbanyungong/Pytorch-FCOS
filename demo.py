@@ -46,6 +46,7 @@ if __name__ == '__main__':
 
     # 分数阈值和nms_iou阈值
     conf_thresh = cfg.test_cfg['conf_thresh']
+    # conf_thresh = 0.5
     nms_thresh = cfg.test_cfg['nms_thresh']
 
     # 是否给图片画框。

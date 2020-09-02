@@ -123,8 +123,62 @@ v = backbone_dic['backbone.bottom_up.level1.1.running_var']
 copy_conv_bn(backbone.level1[0], w, scale, offset, m, v)
 
 
+def copy_Tree(tree, levels, in_channels, out_channels, name=''):
+    if levels == 1:
+        w = backbone_dic[name + '.tree1.conv1.weight']
+        scale = backbone_dic[name + '.tree1.bn1.weight']
+        offset = backbone_dic[name + '.tree1.bn1.bias']
+        m = backbone_dic[name + '.tree1.bn1.running_mean']
+        v = backbone_dic[name + '.tree1.bn1.running_var']
+        copy_conv_bn(tree.tree1.conv1, w, scale, offset, m, v)
 
-print()
+        w = backbone_dic[name + '.tree1.conv2.weight']
+        scale = backbone_dic[name + '.tree1.bn2.weight']
+        offset = backbone_dic[name + '.tree1.bn2.bias']
+        m = backbone_dic[name + '.tree1.bn2.running_mean']
+        v = backbone_dic[name + '.tree1.bn2.running_var']
+        copy_conv_bn(tree.tree1.conv2, w, scale, offset, m, v)
+
+        w = backbone_dic[name + '.tree2.conv1.weight']
+        scale = backbone_dic[name + '.tree2.bn1.weight']
+        offset = backbone_dic[name + '.tree2.bn1.bias']
+        m = backbone_dic[name + '.tree2.bn1.running_mean']
+        v = backbone_dic[name + '.tree2.bn1.running_var']
+        copy_conv_bn(tree.tree2.conv1, w, scale, offset, m, v)
+
+        w = backbone_dic[name + '.tree2.conv2.weight']
+        scale = backbone_dic[name + '.tree2.bn2.weight']
+        offset = backbone_dic[name + '.tree2.bn2.bias']
+        m = backbone_dic[name + '.tree2.bn2.running_mean']
+        v = backbone_dic[name + '.tree2.bn2.running_var']
+        copy_conv_bn(tree.tree2.conv2, w, scale, offset, m, v)
+    else:
+        copy_Tree(tree.tree1, levels - 1, in_channels, out_channels, name=name+'.tree1')
+        copy_Tree(tree.tree2, levels - 1, out_channels, out_channels, name=name+'.tree2')
+    if levels == 1:
+        w = backbone_dic[name + '.root.conv.weight']
+        scale = backbone_dic[name + '.root.bn.weight']
+        offset = backbone_dic[name + '.root.bn.bias']
+        m = backbone_dic[name + '.root.bn.running_mean']
+        v = backbone_dic[name + '.root.bn.running_var']
+        copy_conv_bn(tree.root.conv, w, scale, offset, m, v)
+    if in_channels != out_channels:
+        w = backbone_dic[name + '.project.0.weight']
+        scale = backbone_dic[name + '.project.1.weight']
+        offset = backbone_dic[name + '.project.1.bias']
+        m = backbone_dic[name + '.project.1.running_mean']
+        v = backbone_dic[name + '.project.1.running_var']
+        copy_conv_bn(tree.project, w, scale, offset, m, v)
+
+
+levels = [1, 1, 1, 2, 2, 1]
+channels = [16, 32, 64, 128, 256, 512]
+
+copy_Tree(backbone.level2, levels[2], channels[1], channels[2], 'backbone.bottom_up.level2')
+copy_Tree(backbone.level3, levels[3], channels[2], channels[3], 'backbone.bottom_up.level3')
+copy_Tree(backbone.level4, levels[4], channels[3], channels[4], 'backbone.bottom_up.level4')
+copy_Tree(backbone.level5, levels[5], channels[4], channels[5], 'backbone.bottom_up.level5')
+
 
 
 # fpn, 6个卷积层
