@@ -98,24 +98,33 @@ def copy_conv_gn(conv_unit, w, b, scale, offset):
 
 
 # 获取FCOS模型的权重
-from collections import OrderedDict
-def load_weights2(model, model_path):
-    _state_dict = model.state_dict()
-    pretrained_dict = torch.load(model_path)
-    new_state_dict = OrderedDict()
-    for k, v in pretrained_dict.items():
-        if k in _state_dict:
-            shape_1 = _state_dict[k].shape
-            shape_2 = pretrained_dict[k].shape
-            if shape_1 == shape_2:
-                new_state_dict[k] = v
-            else:
-                print('shape mismatch in %s. shape_1=%s, while shape_2=%s.' % (k, shape_1, shape_2))
-    _state_dict.update(new_state_dict)
-    model.load_state_dict(_state_dict)
+
+# dla34
+w = backbone_dic['backbone.bottom_up.base_layer.0.weight']
+scale = backbone_dic['backbone.bottom_up.base_layer.1.weight']
+offset = backbone_dic['backbone.bottom_up.base_layer.1.bias']
+m = backbone_dic['backbone.bottom_up.base_layer.1.running_mean']
+v = backbone_dic['backbone.bottom_up.base_layer.1.running_var']
+copy_conv_bn(backbone.base_layer, w, scale, offset, m, v)
+
+w = backbone_dic['backbone.bottom_up.level0.0.weight']
+scale = backbone_dic['backbone.bottom_up.level0.1.weight']
+offset = backbone_dic['backbone.bottom_up.level0.1.bias']
+m = backbone_dic['backbone.bottom_up.level0.1.running_mean']
+v = backbone_dic['backbone.bottom_up.level0.1.running_var']
+copy_conv_bn(backbone.level0[0], w, scale, offset, m, v)
 
 
-load_weights2(backbone, 'FCOS_RT_MS_DLA_34_4x_syncbn.pth')
+w = backbone_dic['backbone.bottom_up.level1.0.weight']
+scale = backbone_dic['backbone.bottom_up.level1.1.weight']
+offset = backbone_dic['backbone.bottom_up.level1.1.bias']
+m = backbone_dic['backbone.bottom_up.level1.1.running_mean']
+v = backbone_dic['backbone.bottom_up.level1.1.running_var']
+copy_conv_bn(backbone.level1[0], w, scale, offset, m, v)
+
+
+
+print()
 
 
 # fpn, 6个卷积层

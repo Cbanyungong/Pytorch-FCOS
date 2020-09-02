@@ -83,7 +83,7 @@ class Conv2dUnit(torch.nn.Module):
         # act
         self.act = None
         if act == 'relu':
-            self.act = torch.nn.ReLU()
+            self.act = torch.nn.ReLU(inplace=True)
         elif act == 'leaky':
             self.act = torch.nn.LeakyReLU(0.1)
         elif act == 'mish':
