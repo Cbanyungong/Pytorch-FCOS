@@ -49,7 +49,7 @@ print()
 
 
 
-cfg = FCOS_RT_R50_FPN_4x_Config()
+cfg = FCOS_RT_DLA34_FPN_4x_Config()
 
 # 创建模型
 Backbone = select_backbone(cfg.backbone_type)
@@ -98,55 +98,26 @@ def copy_conv_gn(conv_unit, w, b, scale, offset):
 
 
 # 获取FCOS模型的权重
+from collections import OrderedDict
+def load_weights2(model, model_path):
+    _state_dict = model.state_dict()
+    pretrained_dict = torch.load(model_path)
+    new_state_dict = OrderedDict()
+    for k, v in pretrained_dict.items():
+        if k in _state_dict:
+            shape_1 = _state_dict[k].shape
+            shape_2 = pretrained_dict[k].shape
+            if shape_1 == shape_2:
+                new_state_dict[k] = v
+            else:
+                print('shape mismatch in %s. shape_1=%s, while shape_2=%s.' % (k, shape_1, shape_2))
+    _state_dict.update(new_state_dict)
+    model.load_state_dict(_state_dict)
 
-resnet = backbone
 
-# Resnet50
-w = backbone_dic['backbone.bottom_up.stem.conv1.weight']
-scale = backbone_dic['backbone.bottom_up.stem.conv1.norm.weight']
-offset = backbone_dic['backbone.bottom_up.stem.conv1.norm.bias']
-m = backbone_dic['backbone.bottom_up.stem.conv1.norm.running_mean']
-v = backbone_dic['backbone.bottom_up.stem.conv1.norm.running_var']
-copy_conv_bn(resnet.conv1, w, scale, offset, m, v)
+load_weights2(backbone, 'FCOS_RT_MS_DLA_34_4x_syncbn.pth')
 
 
-nums = [3, 4, 6, 3]
-for nid, num in enumerate(nums):
-    stage_name = 'res' + str(nid + 2)
-    for kk in range(num):
-        conv_name1 = 'backbone.bottom_up.%s.%d.conv1' % (stage_name, kk)
-        w = backbone_dic[conv_name1 + '.weight']
-        scale = backbone_dic[conv_name1 + '.norm.weight']
-        offset = backbone_dic[conv_name1 + '.norm.bias']
-        m = backbone_dic[conv_name1 + '.norm.running_mean']
-        v = backbone_dic[conv_name1 + '.norm.running_var']
-        copy_conv_bn(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv1, w, scale, offset, m, v)
-
-        conv_name2 = 'backbone.bottom_up.%s.%d.conv2' % (stage_name, kk)
-        w = backbone_dic[conv_name2 + '.weight']
-        scale = backbone_dic[conv_name2 + '.norm.weight']
-        offset = backbone_dic[conv_name2 + '.norm.bias']
-        m = backbone_dic[conv_name2 + '.norm.running_mean']
-        v = backbone_dic[conv_name2 + '.norm.running_var']
-        copy_conv_bn(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv2, w, scale, offset, m, v)
-
-        conv_name3 = 'backbone.bottom_up.%s.%d.conv3' % (stage_name, kk)
-        w = backbone_dic[conv_name3 + '.weight']
-        scale = backbone_dic[conv_name3 + '.norm.weight']
-        offset = backbone_dic[conv_name3 + '.norm.bias']
-        m = backbone_dic[conv_name3 + '.norm.running_mean']
-        v = backbone_dic[conv_name3 + '.norm.running_var']
-        copy_conv_bn(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv3, w, scale, offset, m, v)
-
-        # 每个stage的第一个卷积块才有4个卷积层
-        if kk == 0:
-            shortcut_name = 'backbone.bottom_up.%s.%d.shortcut' % (stage_name, kk)
-            w = backbone_dic[shortcut_name + '.weight']
-            scale = backbone_dic[shortcut_name + '.norm.weight']
-            offset = backbone_dic[shortcut_name + '.norm.bias']
-            m = backbone_dic[shortcut_name + '.norm.running_mean']
-            v = backbone_dic[shortcut_name + '.norm.running_var']
-            copy_conv_bn(resnet.get_block('stage%d_%d' % (2+nid, kk)).conv4, w, scale, offset, m, v)
 # fpn, 6个卷积层
 w = fpn_dic['backbone.fpn_lateral5.weight']
 b = fpn_dic['backbone.fpn_lateral5.bias']
@@ -217,7 +188,7 @@ head.scales_on_reg[0].data = torch.Tensor(scale_i)
 
 
 
-torch.save(fcos.state_dict(), 'fcos_rt_r50_fpn_4x.pt')
+torch.save(fcos.state_dict(), 'fcos_rt_dla34_fpn_4x.pt')
 print('\nDone.')
 
 

@@ -17,6 +17,7 @@ class FPN(torch.nn.Module):
     def __init__(self,
                  num_chan=256,
                  use_p6p7=True,
+                 in_chs=[2048, 1024, 512],
                  add_extra_convs=False,
                  extra_convs_on_inputs=True,
                  relu_before_extra_convs=False,
@@ -28,9 +29,9 @@ class FPN(torch.nn.Module):
         self.use_p6p7 = use_p6p7
 
         # 对骨干网络的sxx进行卷积
-        self.s32_conv = Conv2dUnit(2048, num_chan, 1, stride=1, bias_attr=True, act=None)
-        self.s16_conv = Conv2dUnit(1024, num_chan, 1, stride=1, bias_attr=True, act=None)
-        self.s8_conv = Conv2dUnit(512, num_chan, 1, stride=1, bias_attr=True, act=None)
+        self.s32_conv = Conv2dUnit(in_chs[0], num_chan, 1, stride=1, bias_attr=True, act=None)
+        self.s16_conv = Conv2dUnit(in_chs[1], num_chan, 1, stride=1, bias_attr=True, act=None)
+        self.s8_conv = Conv2dUnit(in_chs[2], num_chan, 1, stride=1, bias_attr=True, act=None)
         self.convs = [self.s32_conv, self.s16_conv, self.s8_conv]
 
         # 第二次卷积
