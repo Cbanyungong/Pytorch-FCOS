@@ -30,7 +30,7 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
         # ========= 一些设置 =========
         self.train_cfg = dict(
             lr=0.0001,
-            batch_size=4,
+            batch_size=1,
             model_path='fcos_rt_dla34_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
 
