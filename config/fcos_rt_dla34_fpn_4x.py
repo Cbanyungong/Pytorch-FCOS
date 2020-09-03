@@ -29,7 +29,7 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
 
         # ========= 一些设置 =========
         self.train_cfg = dict(
-            lr=0.0001,
+            lr=0.001,
             batch_size=1,
             model_path='fcos_rt_dla34_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
@@ -59,7 +59,7 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
         # 测试。用于demo.py
         self.test_cfg = dict(
             model_path='fcos_rt_dla34_fpn_4x.pt',
-            # model_path='./weights/step00025000.pt',
+            # model_path='./weights/step00031000.pt',
             target_size=512,
             max_size=736,
             # target_size=320,   # 更快的速度
