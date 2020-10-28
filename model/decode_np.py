@@ -45,8 +45,8 @@ class Decode(object):
 
 
     # 处理一张图片
-    def detect_image(self, image, pimage, im_size, draw_image, draw_thresh=0.0):
-        pred = self.predict(pimage, im_size)   # [bs, M, 6]
+    def detect_image(self, image, pimage, im_info, draw_image, draw_thresh=0.0):
+        pred = self.predict(pimage, im_info)   # [bs, M, 6]
         if pred[0][0][0] < 0.0:
             boxes = np.array([])
             classes = np.array([])
@@ -89,11 +89,11 @@ class Decode(object):
         result_classes[i] = classes
 
     # 处理一批图片
-    def detect_batch(self, batch_img, batch_pimage, batch_im_size, draw_image, draw_thresh=0.0):
+    def detect_batch(self, batch_img, batch_pimage, batch_im_info, draw_image, draw_thresh=0.0):
         batch_size = len(batch_img)
         result_image, result_boxes, result_scores, result_classes = [None] * batch_size, [None] * batch_size, [None] * batch_size, [None] * batch_size
 
-        pred = self.predict(batch_pimage, batch_im_size)   # [bs, M, 6]
+        pred = self.predict(batch_pimage, batch_im_info)   # [bs, M, 6]
 
         threads = []
         for i in range(batch_size):
@@ -151,13 +151,13 @@ class Decode(object):
         im_info = np.expand_dims(samples[0]['im_info'], axis=0)
         return pimage, im_info
 
-    def predict(self, image, im_size):
+    def predict(self, image, im_info):
         image = torch.Tensor(image)
-        im_size = torch.Tensor(im_size)
+        im_info = torch.Tensor(im_info)
         if self.use_gpu:
             image = image.cuda()
-            im_size = im_size.cuda()
-        pred = self._model(image, im_size)
+            im_info = im_info.cuda()
+        pred = self._model(image, im_info)
         pred = pred.cpu().detach().numpy()   # [bs, M, 6]
         return pred
 

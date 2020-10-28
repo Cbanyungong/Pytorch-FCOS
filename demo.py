@@ -48,11 +48,11 @@ def read_test_data(path_dir,
             key_len = len(key_list)
 
         image = cv2.imread('images/test/' + filename)
-        pimage, im_size = _decode.process_image(np.copy(image))
+        pimage, im_info = _decode.process_image(np.copy(image))
         dic = {}
         dic['image'] = image
         dic['pimage'] = pimage
-        dic['im_size'] = im_size
+        dic['im_info'] = im_info
         test_dic['%.8d' % k] = dic
 
 def save_img(filename, image):
@@ -66,7 +66,7 @@ if __name__ == '__main__':
         cfg = FCOS_RT_R50_FPN_4x_Config()
     elif config_file == 2:
         cfg = FCOS_RT_DLA34_FPN_4x_Config()
-    cfg = FCOS_RT_R50_FPN_4x_Config()
+    # cfg = FCOS_RT_R50_FPN_4x_Config()
 
 
     # 读取的模型
@@ -115,13 +115,13 @@ if __name__ == '__main__':
     dic = test_dic['%.8d' % 0]
     image = dic['image']
     pimage = dic['pimage']
-    im_size = dic['im_size']
+    im_info = dic['im_info']
 
 
     # warm up
     if use_gpu:
         for k in range(10):
-            image, boxes, scores, classes = _decode.detect_image(image, pimage, im_size, draw_image=False)
+            image, boxes, scores, classes = _decode.detect_image(image, pimage, im_info, draw_image=False)
 
 
     time_stat = deque(maxlen=20)
@@ -139,9 +139,9 @@ if __name__ == '__main__':
         dic = test_dic.pop('%.8d' % k)
         image = dic['image']
         pimage = dic['pimage']
-        im_size = dic['im_size']
+        im_info = dic['im_info']
 
-        image, boxes, scores, classes = _decode.detect_image(image, pimage, im_size, draw_image, draw_thresh)
+        image, boxes, scores, classes = _decode.detect_image(image, pimage, im_info, draw_image, draw_thresh)
 
         # 估计剩余时间
         start_time = end_time
