@@ -1,22 +1,28 @@
-# -*- coding: utf-8 -*-
-import torch
+#! /usr/bin/env python
+# coding=utf-8
+# ================================================================
+#
+#   Author      : miemie2013
+#   Created date: 2020-08-21 19:33:37
+#   Description : pytorch_fcos
+#
+# ================================================================
 import random
 import colorsys
 import cv2
 import threading
 import os
+import torch
 import numpy as np
 
 from tools.transform import *
 
 
 class Decode(object):
-    def __init__(self, obj_threshold, nms_threshold, _fcos, all_classes, use_gpu, cfg, for_test=True):
-        self._t1 = obj_threshold
-        self._t2 = nms_threshold
+    def __init__(self, _model, all_classes, use_gpu, cfg, for_test=True):
         self.all_classes = all_classes
         self.num_classes = len(self.all_classes)
-        self._fcos = _fcos
+        self._model = _model
         self.use_gpu = use_gpu
 
         # 图片预处理
@@ -37,44 +43,67 @@ class Decode(object):
         # batch_transforms
         self.padBatch = PadBatch(**cfg.padBatch)  # 由于ResizeImage()的机制特殊，这一批所有的图片的尺度不一定全相等，所以这里对齐。
 
-    # 处理一张图片
-    def detect_image(self, image, draw_image):
-        pimage, im_info = self.process_image(np.copy(image))
 
-        boxes, scores, classes = self.predict(pimage, im_info)
-        if boxes is not None and draw_image:
-            self.draw(image, boxes, scores, classes)
+    # 处理一张图片
+    def detect_image(self, image, pimage, im_size, draw_image, draw_thresh=0.0):
+        pred = self.predict(pimage, im_size)   # [bs, M, 6]
+        if pred[0][0][0] < 0.0:
+            boxes = np.array([])
+            classes = np.array([])
+            scores = np.array([])
+        else:
+            boxes = pred[0, :, 2:]
+            scores = pred[0, :, 1]
+            classes = pred[0, :, 0].astype(np.int32)
+        if len(scores) > 0 and draw_image:
+            pos = np.where(scores >= draw_thresh)
+            boxes2 = boxes[pos]         # [M, 4]
+            scores2 = scores[pos]       # [M, ]
+            classes2 = classes[pos]     # [M, ]
+            self.draw(image, boxes2, scores2, classes2)
         return image, boxes, scores, classes
 
+    # 多线程后处理
+    def multi_thread_post(self, i, pred, result_image, result_boxes, result_scores, result_classes, batch_img, draw_image, draw_thresh):
+        if pred[i][0][0] < 0.0:
+            boxes = np.array([])
+            classes = np.array([])
+            scores = np.array([])
+        else:
+            boxes = pred[i, :, 2:]
+            scores = pred[i, :, 1]
+            classes = pred[i, :, 0].astype(np.int32)
+            pos = np.where(scores >= 0.0)
+            boxes = boxes[pos]  # [M, 4]
+            scores = scores[pos]  # [M, ]
+            classes = classes[pos]  # [M, ]
+        if len(scores) > 0 and draw_image:
+            pos = np.where(scores >= draw_thresh)
+            boxes2 = boxes[pos]  # [M, 4]
+            scores2 = scores[pos]  # [M, ]
+            classes2 = classes[pos]  # [M, ]
+            self.draw(batch_img[i], boxes2, scores2, classes2)
+        result_image[i] = batch_img[i]
+        result_boxes[i] = boxes
+        result_scores[i] = scores
+        result_classes[i] = classes
+
     # 处理一批图片
-    def detect_batch(self, batch_img, draw_image):
+    def detect_batch(self, batch_img, batch_pimage, batch_im_size, draw_image, draw_thresh=0.0):
         batch_size = len(batch_img)
         result_image, result_boxes, result_scores, result_classes = [None] * batch_size, [None] * batch_size, [None] * batch_size, [None] * batch_size
-        batch = []
-        batch_im_info = []
 
-        for image in batch_img:
-            pimage, im_info = self.process_image(np.copy(image))
-            batch.append(pimage)
-            batch_im_info.append(im_info)
-        batch = np.concatenate(batch, axis=0)
-        batch_im_info = np.concatenate(batch_im_info, axis=0)
-        batch = torch.Tensor(batch)
-        batch_im_info = torch.Tensor(batch_im_info)
-        if self.use_gpu:
-            batch = batch.cuda()
-            batch_im_info = batch_im_info.cuda()
-        pred_boxes, pred_scores = self._fcos(batch, batch_im_info, eval=True)
-        pred_boxes = pred_boxes.cpu().detach().numpy()    # [N, 所有格子, 4]，最终坐标
-        pred_scores = pred_scores.cpu().detach().numpy()  # [N, 80, 所有格子]，最终分数
+        pred = self.predict(batch_pimage, batch_im_size)   # [bs, M, 6]
 
-        boxes, scores, classes = self._fcos_out(pred_boxes[0], pred_scores[0])
-        if boxes is not None and draw_image:
-            self.draw(batch_img[0], boxes, scores, classes)
-        result_image[0] = batch_img[0]
-        result_boxes[0] = boxes
-        result_scores[0] = scores
-        result_classes[0] = classes
+        threads = []
+        for i in range(batch_size):
+            t = threading.Thread(target=self.multi_thread_post,
+                                 args=(i, pred, result_image, result_boxes, result_scores, result_classes, batch_img, draw_image, draw_thresh))
+            threads.append(t)
+            t.start()
+        # 等待所有线程任务结束。
+        for t in threads:
+            t.join()
         return result_image, result_boxes, result_scores, result_classes
 
     def draw(self, image, boxes, scores, classes):
@@ -122,89 +151,15 @@ class Decode(object):
         im_info = np.expand_dims(samples[0]['im_info'], axis=0)
         return pimage, im_info
 
-    def predict(self, image, im_info):
+    def predict(self, image, im_size):
         image = torch.Tensor(image)
-        im_info = torch.Tensor(im_info)
+        im_size = torch.Tensor(im_size)
         if self.use_gpu:
             image = image.cuda()
-            im_info = im_info.cuda()
-        pred_boxes, pred_scores = self._fcos(image, im_info, eval=True)
-        pred_boxes = pred_boxes.cpu().detach().numpy()    # [N, 所有格子, 4]，最终坐标
-        pred_scores = pred_scores.cpu().detach().numpy()  # [N, 80, 所有格子]，最终分数
+            im_size = im_size.cuda()
+        pred = self._model(image, im_size)
+        pred = pred.cpu().detach().numpy()   # [bs, M, 6]
+        return pred
 
-        # numpy后处理
-        boxes, scores, classes = self._fcos_out(pred_boxes[0], pred_scores[0])
-
-        return boxes, scores, classes
-
-    def _nms_boxes(self, boxes, scores):
-        x = boxes[:, 0]
-        y = boxes[:, 1]
-        w = boxes[:, 2] - x
-        h = boxes[:, 3] - y
-
-        areas = w * h
-        order = scores.argsort()[::-1]
-
-        keep = []
-        while order.size > 0:
-            i = order[0]
-            keep.append(i)
-
-            xx1 = np.maximum(x[i], x[order[1:]])
-            yy1 = np.maximum(y[i], y[order[1:]])
-            xx2 = np.minimum(x[i] + w[i], x[order[1:]] + w[order[1:]])
-            yy2 = np.minimum(y[i] + h[i], y[order[1:]] + h[order[1:]])
-
-            w1 = np.maximum(0.0, xx2 - xx1 + 1)
-            h1 = np.maximum(0.0, yy2 - yy1 + 1)
-            inter = w1 * h1
-
-            ovr = inter / (areas[i] + areas[order[1:]] - inter)
-            inds = np.where(ovr <= self._t2)[0]
-            order = order[inds + 1]
-
-        keep = np.array(keep)
-
-        return keep
-
-
-    def _fcos_out(self, pred_boxes, pred_scores):
-        '''
-        :param pred_boxes:   [所有格子, 4]，最终坐标
-        :param pred_scores:  [80, 所有格子]，最终分数
-        :return:
-        '''
-        # 分数过滤
-        box_classes = np.argmax(pred_scores, axis=0)
-        box_class_scores = np.max(pred_scores, axis=0)
-        pos = np.where(box_class_scores >= self._t1)
-
-        boxes = pred_boxes[pos]         # [M, 4]
-        classes = box_classes[pos]      # [M, ]
-        scores = box_class_scores[pos]  # [M, ]
-
-
-        nboxes, nclasses, nscores = [], [], []
-        for c in set(classes):
-            inds = np.where(classes == c)
-            b = boxes[inds]
-            c = classes[inds]
-            s = scores[inds]
-
-            keep = self._nms_boxes(b, s)
-
-            nboxes.append(b[keep])
-            nclasses.append(c[keep])
-            nscores.append(s[keep])
-
-        if not nclasses and not nscores:
-            return None, None, None
-
-        boxes = np.concatenate(nboxes)
-        classes = np.concatenate(nclasses)
-        scores = np.concatenate(nscores)
-
-        return boxes, scores, classes
 
 

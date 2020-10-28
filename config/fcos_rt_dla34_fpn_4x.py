@@ -35,7 +35,6 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
             batch_size=1,
             model_path='fcos_rt_dla34_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
-
             save_iter=1000,   # 每隔几步保存一次模型
             eval_iter=5000,   # 每隔几步计算一次eval集的mAP
             max_iters=500000,   # 训练多少步
@@ -48,14 +47,9 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
             # model_path='./weights/step00001000.pt',
             target_size=512,
             max_size=736,
-            # target_size=320,   # 更快的速度
-            # max_size=448,   # 更快的速度
-            # target_size=416,   # 更快的速度
-            # max_size=608,   # 更快的速度
-            conf_thresh=0.025,   # 验证时的分数阈值和nms_iou阈值
-            nms_thresh=0.6,
             draw_image=False,    # 是否画出验证集图片
-            eval_batch_size=1,   # 验证时的批大小。由于太麻烦，暂时只支持1。
+            draw_thresh=0.15,    # 如果draw_image==True，那么只画出分数超过draw_thresh的物体的预测框。
+            eval_batch_size=4,   # 验证时的批大小。
         )
 
         # 测试。用于demo.py
@@ -64,11 +58,8 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
             # model_path='./weights/step00031000.pt',
             target_size=512,
             max_size=736,
-            # target_size=320,   # 更快的速度
-            # max_size=448,   # 更快的速度
-            conf_thresh=0.1,
-            nms_thresh=0.6,
             draw_image=True,
+            draw_thresh=0.15,   # 如果draw_image==True，那么只画出分数超过draw_thresh的物体的预测框。
         )
 
 
@@ -96,6 +87,15 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
             loss_gamma=2.0,
             iou_loss_type='giou',  # linear_iou/giou/iou
             reg_weights=1.0,
+        )
+        self.nms_cfg = dict(
+            nms_type='matrix_nms',
+            score_threshold=0.01,
+            post_threshold=0.01,
+            nms_top_k=500,
+            keep_top_k=100,
+            use_gaussian=False,
+            gaussian_sigma=2.,
         )
 
 

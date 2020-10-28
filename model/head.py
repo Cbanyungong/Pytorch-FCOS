@@ -12,6 +12,7 @@ import torch
 import math
 
 from model.custom_layers import Conv2dUnit
+from model.matrix_nms import matrix_nms
 
 
 class FCOSHead(torch.nn.Module):
@@ -232,9 +233,34 @@ class FCOSHead(torch.nn.Module):
             pred_scores_.append(pred_scores_lvl)   # [N, 80, H*W]，最终分数
         pred_boxes = torch.cat(pred_boxes_, dim=1)    # [N, 所有格子, 4]，最终坐标
         pred_scores = torch.cat(pred_scores_, dim=2)  # [N, 80, 所有格子]，最终分数
-        # pred = self.nms(pred_boxes, pred_scores)
-        # return pred
-        return pred_boxes, pred_scores
+
+        # nms
+        preds = None
+        nms_type = self.nms_cfg['nms_type']
+        if nms_type == 'matrix_nms':
+            pred_scores = pred_scores.permute(0, 2, 1)
+            batch_size = pred_boxes.shape[0]
+            if batch_size == 1:
+                pred = matrix_nms(pred_boxes[0], pred_scores[0],
+                                  score_threshold=self.nms_cfg['score_threshold'],
+                                  post_threshold=self.nms_cfg['post_threshold'],
+                                  nms_top_k=self.nms_cfg['nms_top_k'],
+                                  keep_top_k=self.nms_cfg['keep_top_k'],
+                                  use_gaussian=self.nms_cfg['use_gaussian'],
+                                  gaussian_sigma=self.nms_cfg['gaussian_sigma'])
+                preds = pred.unsqueeze(0)
+            else:
+                preds = torch.zeros((batch_size, self.nms_cfg['keep_top_k'], 6), device=pred_scores.device) - 1.0
+                for i in range(batch_size):
+                    pred = matrix_nms(pred_boxes[i], pred_scores[i],
+                                      score_threshold=self.nms_cfg['score_threshold'],
+                                      post_threshold=self.nms_cfg['post_threshold'],
+                                      nms_top_k=self.nms_cfg['nms_top_k'],
+                                      keep_top_k=self.nms_cfg['keep_top_k'],
+                                      use_gaussian=self.nms_cfg['use_gaussian'],
+                                      gaussian_sigma=self.nms_cfg['gaussian_sigma'])
+                    preds[i, :pred.shape[0], :] = pred
+        return preds
 
     def get_loss(self, input, tag_labels, tag_bboxes, tag_centerness):
         """
@@ -269,10 +295,9 @@ class FCOSHead(torch.nn.Module):
         cls_logits, bboxes_reg, centerness = self._get_output(
             input, is_training=False)
         locations = self._compute_locations(input)
-        pred = self._post_processing(locations, cls_logits, bboxes_reg,
+        preds = self._post_processing(locations, cls_logits, bboxes_reg,
                                      centerness, im_info)
-        # return {"bbox": pred}
-        return pred
+        return preds
 
 
 
