@@ -18,13 +18,15 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         # self.classes_path = 'data/voc_classes.txt'
         # self.train_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'   # 训练集图片相对路径
         # self.val_pre_path = '../VOCdevkit/VOC2012/JPEGImages/'     # 验证集图片相对路径
+        # self.num_classes = 20                                      # 数据集类别数
 
         # COCO数据集
         self.train_path = '../COCO/annotations/instances_train2017.json'
         self.val_path = '../COCO/annotations/instances_val2017.json'
         self.classes_path = 'data/coco_classes.txt'
         self.train_pre_path = '../COCO/train2017/'  # 训练集图片相对路径
-        self.val_pre_path = '../COCO/val2017/'  # 验证集图片相对路径
+        self.val_pre_path = '../COCO/val2017/'      # 验证集图片相对路径
+        self.num_classes = 80                       # 数据集类别数
 
 
         # ========= 一些设置 =========
@@ -78,11 +80,11 @@ class FCOS_RT_R50_FPN_4x_Config(object):
             num_chan=256,
             use_p6p7=False,
         )
-        self.head_type = 'FCOSSharedHead'
+        self.head_type = 'FCOSHead'
         self.head = dict(
+            num_classes=self.num_classes,
             fpn_stride=[8, 16, 32],
-            thresh_with_ctr=True,   # AdelaiDet的这个模型在预测时设为False，这里发现True能取得更高的AP。
-            batch_size=1,
+            thresh_with_ctr=True,
             centerness_on_reg=True,
         )
         self.fcos_loss_type = 'FCOSLoss'
