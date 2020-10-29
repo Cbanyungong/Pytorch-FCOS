@@ -48,7 +48,18 @@ def read_test_data(path_dir,
             key_len = len(key_list)
 
         image = cv2.imread('images/test/' + filename)
-        pimage, im_info = _decode.process_image(np.copy(image))
+        sample = _decode.process_image(np.copy(image))
+
+        samples = [sample]
+        coarsest_stride = _decode.pad_to_stride
+        max_shape = np.array([data['image'].shape for data in samples]).max(
+            axis=0)    # max_shape=[3, max_h, max_w]
+        max_shape[1] = int(   # max_h增加到最小的能被coarsest_stride=128整除的数
+            np.ceil(max_shape[1] / coarsest_stride) * coarsest_stride)
+        max_shape[2] = int(   # max_w增加到最小的能被coarsest_stride=128整除的数
+            np.ceil(max_shape[2] / coarsest_stride) * coarsest_stride)
+
+        pimage, im_info = _decode.process_image_batch_transforms(sample, max_shape)
         dic = {}
         dic['image'] = image
         dic['pimage'] = pimage
@@ -66,7 +77,6 @@ if __name__ == '__main__':
         cfg = FCOS_RT_R50_FPN_4x_Config()
     elif config_file == 2:
         cfg = FCOS_RT_DLA34_FPN_4x_Config()
-    # cfg = FCOS_RT_R50_FPN_4x_Config()
 
 
     # 读取的模型
