@@ -11,6 +11,7 @@ import numpy as np
 from paddle import fluid
 import torch
 
+from config import *
 from model.fcos import FCOS
 from model.head import FCOSHead
 from model.neck import FPN
@@ -18,11 +19,22 @@ from model.resnet import Resnet
 
 
 
-resnet = Resnet(50)
-fpn = FPN()
-head = FCOSHead(num_classes=80)
-fcos = FCOS(resnet, fpn, head)
+cfg = FCOS_R50_FPN_Multiscale_2x_Config()
 
+# 创建模型
+Backbone = select_backbone(cfg.backbone_type)
+backbone = Backbone(**cfg.backbone)
+
+Fpn = select_fpn(cfg.fpn_type)
+fpn = Fpn(**cfg.fpn)
+
+Loss = select_loss(cfg.fcos_loss_type)
+fcos_loss = Loss(**cfg.fcos_loss)
+
+Head = select_head(cfg.head_type)
+head = Head(fcos_loss=fcos_loss, **cfg.head)
+
+fcos = FCOS(backbone, fpn, head)
 
 print('\nCopying...')
 
@@ -51,6 +63,7 @@ dic = np.load('fcos_r50_fpn_multiscale_2x.npz')
 
 # 获取FCOS模型的权重
 
+resnet = backbone
 
 # Resnet50
 w = dic['conv1_weights']
@@ -130,46 +143,46 @@ copy_conv(fpn.p7_conv, w, b)
 
 
 # head
-n = 5  # 有n个输出层
 num_convs = 4
-for i in range(n):  # 遍历每个输出层
-    for lvl in range(0, num_convs):
-        # conv + gn
-        conv_cls_name = 'fcos_head_cls_tower_conv_{}'.format(lvl)
-        norm_name = conv_cls_name + "_norm"
-        w = dic[conv_cls_name + "_weights"]
-        b = dic[conv_cls_name + "_bias"]
-        scale = dic[norm_name + "_scale"]
-        offset = dic[norm_name + "_offset"]
-        copy_conv_gn(head.cls_convs_per_feature[i][lvl], w, b, scale, offset)
-
-
-        # conv + gn
-        conv_reg_name = 'fcos_head_reg_tower_conv_{}'.format(lvl)
-        norm_name = conv_reg_name + "_norm"
-        w = dic[conv_reg_name + "_weights"]
-        b = dic[conv_reg_name + "_bias"]
-        scale = dic[norm_name + "_scale"]
-        offset = dic[norm_name + "_offset"]
-        copy_conv_gn(head.reg_convs_per_feature[i][lvl], w, b, scale, offset)
-
-    # 类别分支最后的conv
-    conv_cls_name = "fcos_head_cls"
+ids = [[0, 1], [3, 4], [6, 7], [9, 10]]
+for lvl in range(0, num_convs):
+    # conv + gn
+    conv_cls_name = 'fcos_head_cls_tower_conv_{}'.format(lvl)
+    norm_name = conv_cls_name + "_norm"
     w = dic[conv_cls_name + "_weights"]
     b = dic[conv_cls_name + "_bias"]
-    copy_conv(head.cls_convs_per_feature[i][-1], w, b)
+    scale = dic[norm_name + "_scale"]
+    offset = dic[norm_name + "_offset"]
+    copy_conv_gn(head.cls_convs[lvl], w, b, scale, offset)
 
-    # 坐标分支最后的conv
-    conv_reg_name = "fcos_head_reg"
+
+    # conv + gn
+    conv_reg_name = 'fcos_head_reg_tower_conv_{}'.format(lvl)
+    norm_name = conv_reg_name + "_norm"
     w = dic[conv_reg_name + "_weights"]
     b = dic[conv_reg_name + "_bias"]
-    copy_conv(head.reg_convs_per_feature[i][-1], w, b)
+    scale = dic[norm_name + "_scale"]
+    offset = dic[norm_name + "_offset"]
+    copy_conv_gn(head.reg_convs[lvl], w, b, scale, offset)
 
-    # centerness分支最后的conv
-    conv_centerness_name = "fcos_head_centerness"
-    w = dic[conv_centerness_name + "_weights"]
-    b = dic[conv_centerness_name + "_bias"]
-    copy_conv(head.ctn_convs_per_feature[i], w, b)
+# 类别分支最后的conv
+conv_cls_name = "fcos_head_cls"
+w = dic[conv_cls_name + "_weights"]
+b = dic[conv_cls_name + "_bias"]
+copy_conv(head.cls_convs[-1], w, b)
+
+# 坐标分支最后的conv
+conv_reg_name = "fcos_head_reg"
+w = dic[conv_reg_name + "_weights"]
+b = dic[conv_reg_name + "_bias"]
+copy_conv(head.reg_convs[-1], w, b)
+
+# centerness分支最后的conv
+conv_centerness_name = "fcos_head_centerness"
+w = dic[conv_centerness_name + "_weights"]
+b = dic[conv_centerness_name + "_bias"]
+copy_conv(head.ctn_conv, w, b)
+
 
 # 5个scale
 fpn_names = ['fpn_7', 'fpn_6', 'fpn_res5_sum', 'fpn_res4_sum', 'fpn_res3_sum']

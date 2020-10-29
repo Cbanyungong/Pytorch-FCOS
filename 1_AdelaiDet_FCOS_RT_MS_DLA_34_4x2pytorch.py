@@ -62,7 +62,7 @@ Loss = select_loss(cfg.fcos_loss_type)
 fcos_loss = Loss(**cfg.fcos_loss)
 
 Head = select_head(cfg.head_type)
-head = Head(num_classes=80, fcos_loss=fcos_loss, **cfg.head)
+head = Head(fcos_loss=fcos_loss, **cfg.head)
 
 fcos = FCOS(backbone, fpn, head)
 

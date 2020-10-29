@@ -32,7 +32,7 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
         # ========= 一些设置 =========
         self.train_cfg = dict(
             lr=0.001,
-            batch_size=4,
+            batch_size=3,
             num_threads=4,   # 读数据的线程数
             max_batch=2,     # 最大读多少个批
             model_path='fcos_rt_dla34_fpn_4x.pt',

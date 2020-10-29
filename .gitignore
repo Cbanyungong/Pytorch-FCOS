@@ -21,6 +21,7 @@ __pycache__/
 /yolov3*/
 
 
+*.log
 *.npz
 *.zip
 *.pt
