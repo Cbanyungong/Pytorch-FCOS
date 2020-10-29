@@ -45,6 +45,10 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
         return out
 
+    def freeze(self):
+        self.conv1.freeze()
+        self.conv2.freeze()
+
 
 
 class Root(nn.Module):
@@ -63,6 +67,9 @@ class Root(nn.Module):
             x += children[0]
         x = self.relu(x)
         return x
+
+    def freeze(self):
+        self.conv.freeze()
 
 
 class Tree(nn.Module):
@@ -113,14 +120,26 @@ class Tree(nn.Module):
             x = self.tree2(x1, children=children)
         return x
 
+    def freeze(self):
+        if self.project:
+            self.project.freeze()
+        self.tree1.freeze()
+        if self.levels == 1:
+            self.tree2.freeze()
+            self.root.freeze()
+        else:
+            self.tree2.freeze()
+
 
 
 class DLA(torch.nn.Module):
-    def __init__(self, norm_type, levels, channels, block=BasicBlock, residual_root=False, feature_maps=[3, 4, 5]):
+    def __init__(self, norm_type, levels, channels, block=BasicBlock, residual_root=False, feature_maps=[3, 4, 5], freeze_at=0):
         super(DLA, self).__init__()
         self.norm_type = norm_type
         self.channels = channels
         self.feature_maps = feature_maps
+        assert freeze_at in [0, 1, 2, 3, 4, 5, 6, 7]
+        self.freeze_at = freeze_at
 
         self._out_features = ["level{}".format(i) for i in range(6)]   # 每个特征图的名字
         self._out_feature_channels = {k: channels[i] for i, k in enumerate(self._out_features)}   # 每个特征图的输出通道数
@@ -162,6 +181,25 @@ class DLA(torch.nn.Module):
             if i in self.feature_maps:
                 outs.append(x)
         return outs
+
+    def freeze(self):
+        freeze_at = self.freeze_at
+        if freeze_at >= 1:
+            self.base_layer.freeze()
+        if freeze_at >= 2:
+            for m in self.level0:
+                m.freeze()
+        if freeze_at >= 3:
+            for m in self.level1:
+                m.freeze()
+        if freeze_at >= 4:
+            self.level2.freeze()
+        if freeze_at >= 5:
+            self.level3.freeze()
+        if freeze_at >= 6:
+            self.level4.freeze()
+        if freeze_at >= 7:
+            self.level5.freeze()
 
 
 def dla34(norm_type, pretrained=None, **kwargs):  # DLA-34

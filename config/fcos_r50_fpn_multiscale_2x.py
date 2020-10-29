@@ -33,6 +33,8 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
         self.train_cfg = dict(
             lr=0.0001,
             batch_size=1,
+            num_threads=5,   # 读数据的线程数
+            max_batch=2,     # 最大读多少个批
             model_path='fcos_r50_fpn_multiscale_2x.pt',
             # model_path='./weights/step00001000.pt',
             save_iter=1000,   # 每隔几步保存一次模型
@@ -64,12 +66,15 @@ class FCOS_R50_FPN_Multiscale_2x_Config(object):
 
 
         # ============= 模型相关 =============
+        self.use_ema = False
+        self.ema_decay = 0.9998
         self.backbone_type = 'Resnet'
         self.backbone = dict(
             depth=50,
             norm_type='affine_channel',
             feature_maps=[3, 4, 5],
             use_dcn=False,
+            freeze_at=5,
         )
         self.fpn_type = 'FPN'
         self.fpn = dict(

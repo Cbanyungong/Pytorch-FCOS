@@ -32,7 +32,9 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
         # ========= 一些设置 =========
         self.train_cfg = dict(
             lr=0.001,
-            batch_size=1,
+            batch_size=4,
+            num_threads=4,   # 读数据的线程数
+            max_batch=2,     # 最大读多少个批
             model_path='fcos_rt_dla34_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
             save_iter=1000,   # 每隔几步保存一次模型
@@ -64,9 +66,12 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
 
 
         # ============= 模型相关 =============
+        self.use_ema = False
+        self.ema_decay = 0.9998
         self.backbone_type = 'dla34'
         self.backbone = dict(
             norm_type='bn',
+            freeze_at=7,
         )
         self.fpn_type = 'FPN'
         self.fpn = dict(

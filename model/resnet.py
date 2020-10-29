@@ -72,13 +72,15 @@ class IdentityBlock(torch.nn.Module):
         return x
 
 class Resnet(torch.nn.Module):
-    def __init__(self, depth, norm_type='affine_channel', feature_maps=[3, 4, 5], use_dcn=False, downsample_in3x3=True):
+    def __init__(self, depth, norm_type='affine_channel', feature_maps=[3, 4, 5], use_dcn=False, downsample_in3x3=True, freeze_at=0):
         super(Resnet, self).__init__()
         assert depth in [50, 101]
         self.depth = depth
         self.norm_type = norm_type
         self.feature_maps = feature_maps
         self.use_dcn = use_dcn
+        assert freeze_at in [0, 1, 2, 3, 4, 5]
+        self.freeze_at = freeze_at
 
         bn = 0
         gn = 0
@@ -139,8 +141,8 @@ class Resnet(torch.nn.Module):
             layer = getattr(self, name)
         return layer
 
-    def freeze(self, freeze_at=2):
-        assert freeze_at in [1, 2, 3, 4, 5]
+    def freeze(self):
+        freeze_at = self.freeze_at
         if freeze_at >= 1:
             self.conv1.freeze()
         if freeze_at >= 2:

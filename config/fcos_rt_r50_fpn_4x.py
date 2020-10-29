@@ -33,6 +33,8 @@ class FCOS_RT_R50_FPN_4x_Config(object):
         self.train_cfg = dict(
             lr=0.0001,
             batch_size=4,
+            num_threads=4,   # 读数据的线程数
+            max_batch=2,     # 最大读多少个批
             model_path='fcos_rt_r50_fpn_4x.pt',
             # model_path='./weights/step00001000.pt',
             save_iter=1000,   # 每隔几步保存一次模型
@@ -64,6 +66,8 @@ class FCOS_RT_R50_FPN_4x_Config(object):
 
 
         # ============= 模型相关 =============
+        self.use_ema = False
+        self.ema_decay = 0.9998
         self.backbone_type = 'Resnet'
         self.backbone = dict(
             depth=50,
@@ -71,6 +75,7 @@ class FCOS_RT_R50_FPN_4x_Config(object):
             feature_maps=[3, 4, 5],
             use_dcn=False,
             downsample_in3x3=False,   # 注意这个细节，是在1x1卷积层下采样的。
+            freeze_at=5,
         )
         self.fpn_type = 'FPN'
         self.fpn = dict(
