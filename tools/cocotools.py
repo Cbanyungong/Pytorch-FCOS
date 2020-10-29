@@ -98,7 +98,7 @@ def bbox_eval(anno_file):
     return map_stats
 
 
-def multi_thread_read(j, images, _decode, offset, eval_pre_path, batch_im_id, batch_im_name, batch_img, batch_pimage, batch_im_info):
+def multi_thread_read(j, images, _decode, offset, eval_pre_path, batch_im_id, batch_im_name, batch_img, samples):
     im = images[offset + j]
     im_id = im['id']
     file_name = im['file_name']
@@ -106,7 +106,11 @@ def multi_thread_read(j, images, _decode, offset, eval_pre_path, batch_im_id, ba
     batch_im_id[j] = im_id
     batch_im_name[j] = file_name
     batch_img[j] = image
-    pimage, im_info = _decode.process_image(np.copy(image))
+    sample = _decode.process_image(np.copy(image))
+    samples[j] = sample
+
+def multi_thread_read_batch_transforms(j, samples, max_shape, _decode, batch_pimage, batch_im_info):
+    pimage, im_info = _decode.process_image_batch_transforms(samples[j], max_shape)
     batch_pimage[j] = pimage
     batch_im_info[j] = im_info
 
@@ -135,11 +139,32 @@ def read_eval_data(images,
         batch_img = [None] * batch_size
         batch_pimage = [None] * batch_size
         batch_im_info = [None] * batch_size
+        samples = [None] * batch_size
         threads = []
         offset = i * eval_batch_size
+
+        # sample_transforms
         for j in range(batch_size):
             t = threading.Thread(target=multi_thread_read,
-                                 args=(j, images, _decode, offset, eval_pre_path, batch_im_id, batch_im_name, batch_img, batch_pimage, batch_im_info))
+                                 args=(j, images, _decode, offset, eval_pre_path, batch_im_id, batch_im_name, batch_img, samples))
+            threads.append(t)
+            t.start()
+        # 等待所有线程任务结束。
+        for t in threads:
+            t.join()
+
+        # batch_transforms。需要先同步PadBatch
+        coarsest_stride = _decode.pad_to_stride
+        max_shape = np.array([data['image'].shape for data in samples]).max(
+            axis=0)    # max_shape=[3, max_h, max_w]
+        max_shape[1] = int(   # max_h增加到最小的能被coarsest_stride=128整除的数
+            np.ceil(max_shape[1] / coarsest_stride) * coarsest_stride)
+        max_shape[2] = int(   # max_w增加到最小的能被coarsest_stride=128整除的数
+            np.ceil(max_shape[2] / coarsest_stride) * coarsest_stride)
+
+        for j in range(batch_size):
+            t = threading.Thread(target=multi_thread_read_batch_transforms,
+                                 args=(j, samples, max_shape, _decode, batch_pimage, batch_im_info))
             threads.append(t)
             t.start()
         # 等待所有线程任务结束。

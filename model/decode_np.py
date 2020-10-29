@@ -41,7 +41,8 @@ class Decode(object):
                                        use_cv2=cfg.resizeImage['use_cv2'])  # 多尺度训练，随机选一个尺度，不破坏原始宽高比地缩放。具体见代码。
         self.permute = Permute(**cfg.permute)  # 图片从HWC格式变成CHW格式
         # batch_transforms
-        self.padBatch = PadBatch(**cfg.padBatch)  # 由于ResizeImage()的机制特殊，这一批所有的图片的尺度不一定全相等，所以这里对齐。
+        self.pad_to_stride = cfg.padBatch['pad_to_stride']
+        self.padBatch = PadBatchSingle(use_padded_im_info=cfg.padBatch['use_padded_im_info'])  # 由于ResizeImage()的机制特殊，这一批所有的图片的尺度不一定全相等，所以这里对齐。
 
 
     # 处理一张图片
@@ -145,10 +146,13 @@ class Decode(object):
         sample = self.normalizeImage(sample, context)
         sample = self.resizeImage(sample, context)
         sample = self.permute(sample, context)
-        samples = self.padBatch([sample], context)
+        return sample
 
-        pimage = np.expand_dims(samples[0]['image'], axis=0)
-        im_info = np.expand_dims(samples[0]['im_info'], axis=0)
+    def process_image_batch_transforms(self, sample, max_shape):
+        sample = self.padBatch(max_shape, sample, self.context)
+
+        pimage = np.expand_dims(sample['image'], axis=0)
+        im_info = np.expand_dims(sample['im_info'], axis=0)
         return pimage, im_info
 
     def predict(self, image, im_info):

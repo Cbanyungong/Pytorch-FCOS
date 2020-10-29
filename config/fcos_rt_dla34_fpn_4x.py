@@ -47,7 +47,7 @@ class FCOS_RT_DLA34_FPN_4x_Config(object):
             # model_path='./weights/step00001000.pt',
             target_size=512,
             max_size=736,
-            draw_image=True,    # 是否画出验证集图片
+            draw_image=False,    # 是否画出验证集图片
             draw_thresh=0.15,    # 如果draw_image==True，那么只画出分数超过draw_thresh的物体的预测框。
             eval_batch_size=4,   # 验证时的批大小。
         )

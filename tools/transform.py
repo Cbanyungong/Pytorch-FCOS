@@ -779,6 +779,33 @@ class PadBatch(BaseOperator):
 
         return samples
 
+class PadBatchSingle(BaseOperator):
+    """
+    一张图片的RPadBatch
+    """
+
+    def __init__(self, use_padded_im_info=True):
+        super(PadBatchSingle, self).__init__()
+        self.use_padded_im_info = use_padded_im_info
+
+    def __call__(self, max_shape, sample, context=None):
+        '''
+        :param max_shape:  max_shape=[3, max_h, max_w]
+        :param sample:
+        :param context:
+        :return:
+        '''
+        im = sample['image']
+        im_c, im_h, im_w = im.shape[:]
+        padding_im = np.zeros(
+            (im_c, max_shape[1], max_shape[2]), dtype=np.float32)
+        padding_im[:, :im_h, :im_w] = im    # im贴在padding_im的左上部分实现对齐
+        sample['image'] = padding_im
+        if self.use_padded_im_info:
+            sample['im_info'][:2] = max_shape[1:3]
+
+        return sample
+
 
 class Gt2FCOSTarget(BaseOperator):
     """
